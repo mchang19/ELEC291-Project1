@@ -21,10 +21,18 @@ finished_flag:     dbit 1 ;
 ;                     1234567890123456    <- This helps determine the location of the counter
 Initial_Message:  db 'Welcome! To cont', 0
 ToContinueClick:  db 'pls click mode  ', 0
-Show_Date:		  db '22/1/2020  Thurs', 0
-Alarm_Clock:	  db 'Alarm Clock  ',0
+
+SoakMessage:      db 'Soak Settings:  ', 0
 Setting_Alarm:    db 'Setting Alarm',0
 
+
++Outside_temp: 	ds 1;
+Oven_temp:	ds 1;
+Reflow_time:	ds 1;
+Reflow_temp:	ds 1;
+Soak_time:	ds 1;
+Soak_temp:	ds 1;
+Mode_sel:     	ds 1 ;
 
 defaultMessageDisplay:
     lcall LCD_4BIT
@@ -40,10 +48,45 @@ checkContinue:
 	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
 	; A valid press of the 'MODE' button has been detected.
 
-    mov a, mode ;increment mode
+    mov a, Mode_sel ;increment mode
     add a, #0x01
-    mov mode, a
+    mov Mode_sel, a
 
 ;selectLanguage: To Be added later
+
+setSoak:
+    Set_Cursor(1, 0)
+	Send_Constant_String(#SoakMessage)
+
+    Set_Cursor(2,0)
+    WriteData(#Soak_temp)
+    WriteData(#0b11011111)
+    WriteData(#'C   ')
+    WriteData(#Soak_time)
+    WriteData(#'s')
+
+checkSoakTimeINC:
+    jb INCREMENT_BUT, checkSoakTimeDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb INCREMENT_BUT, checkSoakTimeDEC   ; if the button is not pressed jump
+	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
+
+    mov a, Soak_time
+    add a, #0x05
+    mov Soak_time, a
+    ljmp checkSoakTempINC
+
+checkSoakTimeDEC:
+    jb INCREMENT_BUT, checkSoakTempINC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb INCREMENT_BUT, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
+	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
+    
+    cjne Soak_time, #0x140, DECSoakTime
+
+DECSoakTime:
+    mov a, Soak_time
+    sub a, #0x05
+    mov Soak_time, a
 
 
