@@ -21,15 +21,26 @@ TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
-BOOT_BUTTON   equ P4.5
-SOUND_OUT     equ P3.7
-BUTTON0       equ P0.0
-BUTTON1       equ P0.1
-BUTTON2       equ P0.2
-BUTTON3       equ P0.3
-BUTTON4       equ P0.4
-BUTTON5       equ P0.5
-BUTTON6       equ P0.6
+;----------------;
+;button variables;
+;----------------;
+
+START_BUTTON   		equ P4.5
+STOP_BUTTON       	equ P0.0
+BUTTON1      		equ P0.1
+BUTTON2       		equ P0.2
+BUTTON3       		equ P0.3
+BUTTON4       		equ P0.4
+BUTTON5       		equ P0.5
+BUTTON6       		equ P0.6
+BUTTON7       		equ P0.6
+BUTTON8       		equ P0.6
+BUTTON9       		equ P0.6
+BUTTON10      		equ P0.6
+BUTTON11      		equ P0.6
+BUTTON12      		equ P0.6
+BUTTON13      		equ P0.6
+RESET_BUTTON    	equ P0.6
 
 ; Reset vector
 org 0x0000
@@ -63,22 +74,13 @@ org 0x002B
 dseg at 0x30
 Count1ms:     ds 2 ; Used to determine when half second has passed
 BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
-BCD_counter2: ds 1 ;
-BCD_counter3: ds 1 ;
-Hour:         ds 1 ;
-Hour2:        ds 1 ;
-Hour3:        ds 1 ;
-Minute:       ds 1 ;
-Minute2:      ds 1 ;
-Minute3:      ds 1 ;
-Second:       ds 1 ;
-Second2:      ds 1 ;
-Second3:      ds 1 ;
-Half_Day:     ds 1 ;
-Day:          ds 1 ;
-Day2:         ds 1 ;
-Day3:         ds 1 ;
-Mode_sel:     ds 1 ;
+Outside_temp: 	ds 1;
+Oven_temp:	ds 1;
+Reflow_time:	ds 1;
+Reflow_temp:	ds 1;
+Soak_time:	ds 1;
+Soak_temp:	ds 1;
+Mode_sel:     	ds 1 ;
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
 ; instructions with these variables.  This is how you define a 1-bit variable:
@@ -106,18 +108,18 @@ $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
 
-;                     1234567890123456    <- This helps determine the location of the counter
-Initial_Message:  db 'xx:xx:xx xM, xxx', 0
-Clock_Message:    db 'Mode: Clock     '
-Alarm1_Message:   db 'Mode: Alarm Wday ', 0
-Alarm2_Message:   db 'Mode: Alarm Wknd ', 0
-Monday:           db 'Mon', 0
-Tuesday:          db 'Tue', 0
-Wednesday:        db 'Wed', 0
-Thursday:         db 'Thu', 0
-Friday:           db 'Fri', 0
-Saturday:         db 'Sat', 0
-Sunday:           db 'Sun', 0
+;                     	    1234567890123456    <- This helps determine the location of the counter
+Select_Language: 	db "Select language:", 0
+Error			db "ERROR", 0
+Time: 			db "Time:", 0
+Temp:			db "Temp:", 0
+Setting:		db "Setting", 0
+Activation: 		db "ACTIVATION", 0
+Ramp_Up:		db "RAMP UP", 0
+Soaking: 		db "SOAKING", 0
+Reflow:			db "REFLOW"
+Cool_Down:		db "COOL DOWN", 0
+
  
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -134,8 +136,8 @@ Timer0_Init:
 	mov TIMER0_RELOAD_H, #high(TIMER0_RELOAD)
 	mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
 	; Enable the timer and interrupts
-    clr ET0  ; Enable timer 0 interrupt
-    setb TR0  ; Start timer 0
+    	clr ET0  ; Enable timer 0 interrupt
+    	setb TR0  ; Start timer 0
 	ret
 
 ;---------------------------------;
