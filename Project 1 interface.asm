@@ -519,9 +519,7 @@ Forever:
 	mov a, state
 	cjne a, #0, next1
 	ret
-	
-	
-	
+
 
 state0:
 	cjne a, #0, state1
@@ -537,7 +535,7 @@ state1:
 	cjne a, #1, state2
 	mov pwm, #100
 	mov sec, #0
-	mov a, temp_soak
+	mov a, Soak_temp
 	clr c
 	subb a, temp
 	jnc state1_done
@@ -549,7 +547,7 @@ state1_done:
 state2:
 	cjne a, #2, state3
 	mov pwm, #20
-	mov a, time_soak
+	mov a, Soak_time
 	clr c
 	subb a, sec
 	jnc state2_done
@@ -563,7 +561,7 @@ state3:
 	cjne a, #3, state4
 	mov pwm, #100
 	mov sec, #0
-	mov a, temp_reflow
+	mov a, Reflow_temp
 	clr c
 	subb a, temp
 	jnc state3_done
@@ -575,7 +573,7 @@ state3_done:
 state4:
 	cjne a, #4, state5
 	mov pwm, #20
-	mov a, time_reflow
+	mov a, Reflow_time
 	clr c
 	subb a, sec
 	jnc state4_done
@@ -587,7 +585,7 @@ state4_done:
 state5:
 	cjne a, #5, state0
 	mov pwm, #0
-	mov a, temp_reflow
+	mov a, Reflow_temp
 	clr c
 	subb a, temp
 	jnc state5_done
