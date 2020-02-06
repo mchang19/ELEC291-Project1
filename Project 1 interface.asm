@@ -135,6 +135,9 @@ Initial_Message:  db 'Welcome! To cont', 0
 ToContinueClick:  db 'pls click mode  ', 0
 
 SoakMessage:      db 'Soak Settings:  ', 0
+
+ConfirmStart:	  db 'Confirm to start', 0
+
 OvenDisplay:      db 't=   s tmp=   °C', 0
 OvenDisplay2:     db 's:     otmp=  °C', 0
 
@@ -408,13 +411,6 @@ main:
     setb EA   ; Enable Global interrupts
     lcall LCD_4BIT
     
-    Set_Cursor(1,1)
-    Send_Constant_String(#Temp)
-    Set_Cursor(1, 10)
-    Send_Constant_String(#TJ)
-    Set_Cursor(2, 1)
-    Send_Constant_String(#Time)
-    
     mov a, #0
     mov Mode_sel, a
     
@@ -544,9 +540,9 @@ Calculate_Temp:
 	ret
 --------------------------------------------------------------------------------------------------------------
 defaultMessageDisplay:
-    lcall LCD_4BIT
     WriteCommand(#0x01)
     Wait_Milli_Seconds(#2)
+
     Set_Cursor(1, 0)
 	Send_Constant_String(#InitMessage)
     Set_Cursor(2, 0)
@@ -566,6 +562,8 @@ checkContinue:
 ;selectLanguage: To Be added later
 
 setSoak:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
     Set_Cursor(1, 0)
 	Send_Constant_String(#SoakMessage)
 
@@ -628,7 +626,9 @@ jumpINCSoakTemp:
 jumpDECSoakTemp:
     ljmp DECSoakTemp
 ----------------------------------------------------------------------------------------------------------
-setSoak:
+setReflow:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
     Set_Cursor(1, 0)
 	Send_Constant_String(#ReflowMessage)
 
@@ -692,7 +692,18 @@ jumpINCReflowTemp:
 jumpDECReflowTemp:
     ljmp DECReflowTemp
 ----------------------------------------------------------------------------------------------------------
+activateOven:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
 
+	Set_Cursor(1, 0)
+	Send_Constant_String(#ConfirmStart)
+
+	jb START_BUTTON, activateOven  ; if the 'MODE' button is not pressed repeat
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb START_BUTTON, activateOven   ; if the 'BOOT' button is not pressed repeat
+	jnb START_BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
+	; A valid press of the 'MODE' button has been detected.
 	
-	 	
+	ret
     END
