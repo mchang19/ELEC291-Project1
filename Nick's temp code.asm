@@ -37,14 +37,14 @@ Soak_time:	ds 1;
 Soak_temp:	ds 1;
 Mode_sel:     	ds 1 ;
 
-defaultMessageDisplay:
-    lcall LCD_4BIT
-    WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-    Set_Cursor(1, 0)
-	Send_Constant_String(#InitMessage)
-    Set_Cursor(2, 0)
-    Send_Constant_String(#ToContinueClick)
+    defaultMessageDisplay:
+        lcall LCD_4BIT
+        WriteCommand(#0x01)
+        Wait_Milli_Seconds(#2)
+        Set_Cursor(1, 0)
+        Send_Constant_String(#InitMessage)
+        Set_Cursor(2, 0)
+        Send_Constant_String(#ToContinueClick)
 
 checkContinue:
     jb THE MODE BUTTON, checkContinue  ; if the 'MODE' button is not pressed repeat
