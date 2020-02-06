@@ -450,7 +450,7 @@ main:
     lcall InitSerialPort
    	lcall INIT_SPI
 	lcall defaultMessageDisplay
-	
+
     sjmp Forever
 	
 
@@ -706,4 +706,55 @@ activateOven:
 	; A valid press of the 'MODE' button has been detected.
 	
 	ret
+----------------------------------------------------------------------------------------------------------
+
+INCSoakTime:
+    mov a, Soak_time
+    add a, #0x05
+    mov Soak_time, a
+    ljmp setSoak
+
+DECSoakTime:
+    mov a, Soak_time
+    sub a, #0x05
+    mov Soak_time, a
+    ljmp setSoak
+
+INCSoakTemp:
+    mov a, Soak_temp
+    add a, #0x05
+    mov Soak_temp, a
+    ljmp setSoak
+
+DECSoakTime:
+    mov a, Soak_temp
+    sub a, #0x05
+    mov Soak_temp, a
+    ljmp setSoak
+
+-------------------------
+INCReflowTime:
+    mov a, Reflow_time
+    add a, #0x05
+    mov Reflow_time, a
+    ljmp setReflow
+
+DECReflowTime:
+    mov a, Reflow_time
+    sub a, #0x05
+    mov Reflow_time, a
+    ljmp setReflow
+
+INCReflowTemp:
+    mov a, Reflow_temp
+    add a, #0x05
+    mov Reflow_temp, a
+    ljmp setReflow
+
+DECReflowTime:
+    mov a, Reflow_temp
+    sub a, #0x05
+    mov Reflow_temp, a
+    ljmp setReflow
+
     END
