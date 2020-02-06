@@ -89,6 +89,7 @@ SoakTemp_UB:	ds 8;
 SoakTemp_LB:	ds 8;
 SoakTime_UB:	ds 7;
 SoakTime_LB:	ds 7;
+pwm:			ds 7;
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
 ; instructions with these variables.  This is how you define a 1-bit variable:
@@ -130,6 +131,14 @@ Soaking: 		db "SOAKING", 0
 Reflow:			db "REFLOW"
 Cool_Down:		db "COOL DOWN", 0
 
+;                     1234567890123456    <- This helps determine the location of the counter
+Initial_Message:  db 'Welcome! To cont', 0
+ToContinueClick:  db 'pls click mode  ', 0
+
+SoakMessage:      db 'Soak Settings:  ', 0
+OvenDisplay:      db 't=   s tmp=   °C', 0
+OvenDisplay2:     db 's:     otmp=  °C', 0
+;rfl, sk, rps, rpp, coo
  
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -447,7 +456,7 @@ main:
     ljmp state0
 	
 
-Forever:
+forever:
 	clr CE_ADC
 	
 ;	mov R0, #00000001B
@@ -556,7 +565,6 @@ state2:
 state2_done:
 	lcall forever
 	
-
 state3:
 	cjne a, #3, state4
 	mov pwm, #100
@@ -593,9 +601,6 @@ state5:
 	
 state5_done:
 	lcall forever
-		
-		
-		
 		
 
 	;change number to BCD for display
