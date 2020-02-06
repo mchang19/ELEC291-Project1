@@ -25,22 +25,22 @@ TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 ;button variables;
 ;----------------;
 
-START_BUTTON   		equ P4.5
-STOP_BUTTON       	equ P0.0
-BUTTON1      		equ P0.1
-BUTTON2       		equ P0.2
-BUTTON3       		equ P0.3
-BUTTON4       		equ P0.4
-BUTTON5       		equ P0.5
-BUTTON6       		equ P0.6
-BUTTON7       		equ P0.6
-BUTTON8       		equ P0.6
-BUTTON9       		equ P0.6
-BUTTON10      		equ P0.6
-BUTTON11      		equ P0.6
-BUTTON12      		equ P0.6
-BUTTON13      		equ P0.6
-RESET_BUTTON    	equ P0.6
+;START_BUTTON   		equ P4.5
+;STOP_BUTTON       	equ P0.0
+;BUTTON1      		equ P0.1
+;BUTTON2       		equ P0.2
+;BUTTON3       		equ P0.3
+;BUTTON4       		equ P0.4
+;BUTTON5       		equ P0.5
+;BUTTON6       		equ P0.6
+;BUTTON7       		equ P0.6
+;BUTTON8       		equ P0.6
+;BUTTON9       		equ P0.6
+;BUTTON10      		equ P0.6
+;BUTTON11      		equ P0.6
+;BUTTON12      		equ P0.6
+;BUTTON13      		equ P0.6
+;RESET_BUTTON    	equ P0.6
 
 ; Reset vector
 org 0x0000
@@ -102,6 +102,13 @@ rampUp_flag:       dbit 1 ;
 reflow_flag:       dbit 1 ;
 coolDown_flag:     dbit 1 ;
 finished_flag:     dbit 1 ;
+PB0: dbit 1 ; Variable to store the state of pushbutton 0 after calling ADC_to_PB below TIME INC
+PB1: dbit 1 ; Variable to store the state of pushbutton 1 after calling ADC_to_PB below TIME DEC
+PB2: dbit 1 ; Variable to store the state of pushbutton 2 after calling ADC_to_PB below TEMP INC
+PB3: dbit 1 ; Variable to store the state of pushbutton 3 after calling ADC_to_PB below TEMP DEC
+PB4: dbit 1 ; Variable to store the state of pushbutton 4 after calling ADC_to_PB below MODE
+PB5: dbit 1 ; Variable to store the state of pushbutton 5 after calling ADC_to_PB below STOP
+PB6: dbit 1 ; Variable to store the state of pushbutton 6 after calling ADC_to_PB below START
 
 
 cseg
@@ -529,14 +536,15 @@ forever:
 	cjne a, #0, next1
 	ret
 
+	lcall displayDefaultMessage
 
-state0:
-	cjne a, #0, state1
-	mov pwm, #0
-	jb PB6, state0_done
-	jnb PB6, $ ; Wait for key release
-	mov state, #1
-
+;state0:
+;	cjne a, #0, state1
+;	mov pwm, #0
+;	jb PB6, state0_done
+;	jnb PB6, $ ; Wait for key release
+;	mov state, #1
+;
 state0_done:
 	lcall forever
 
@@ -632,4 +640,224 @@ state5_done:
 	Display_char(#'C')
 	
 	lcall SendString 	
+
+--------------------------------------------------------------------------------------------------------------
+defaultMessageDisplay:
+    WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
+
+    Set_Cursor(1, 0)
+	Send_Constant_String(#InitMessage)
+    Set_Cursor(2, 0)
+    Send_Constant_String(#ToContinueClick)
+
+checkContinue:
+    jb PB5, checkContinue  ; if the 'MODE' button is not pressed repeat
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb THE MODE BUTTON, checkContinue   ; if the 'BOOT' button is not pressed repeat
+	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
+	; A valid press of the 'MODE' button has been detected.
+
+    mov a, Mode_sel ;increment mode
+    add a, #0x01
+    mov Mode_sel, a
+
+;selectLanguage: To Be added later
+
+setSoak:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
+    Set_Cursor(1, 0)
+	Send_Constant_String(#SoakMessage)
+
+    Set_Cursor(2,0)
+    WriteData(#Soak_temp)
+    WriteData(#0b11011111)
+    WriteData(#'C   ')
+    WriteData(#Soak_time)
+    WriteData(#'s')
+
+checkSoakTimeINC:
+    jb PB0, checkSoakTimeDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB0, checkSoakTimeDEC   ; if the button is not pressed jump
+	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Soak_time, #0x120, jumpINCSoakTime
+
+checkSoakTimeDEC:
+    jb PB1, checkSoakTempINC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB1, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Soak_time, #0x60, jumpDECSoakTime
+
+checkSoakTempINC:
+    jb PB2, checkSoakTempDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB2, checkSoakTempDEC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB2, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Soak_temp, #0x200, jumpINCSoakTemp
+
+checkSoakTempDEC:
+    jb PB3, checkSoakTempDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB3, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB3, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Soak_temp, #0x140, jumpDECSoakTemp
+
+continueSoakSetting:
+    jb PB4, setSoak  ; if the 'MODE' button is not pressed repeat
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB4, setSoak   ; if the 'BOOT' button is not pressed repeat
+	jnb PB4, $		; Wait for button release.  The '$' means: jump to same instruction.
+	; A valid press of the 'MODE' button has been detected.
+
+    mov a, Mode_sel ;increment mode
+    add a, #0x01
+    mov Mode_sel, a
+    ljmp setReflow
+----------------------------------------------
+jumpINCSoakTime:
+    ljmp INCSoakTime
+
+jumpDECSoakTime:
+    ljmp DECSoakTime
+
+jumpINCSoakTemp:
+    ljmp INCSoakTemp
+
+jumpDECSoakTemp:
+    ljmp DECSoakTemp
+----------------------------------------------------------------------------------------------------------
+setReflow:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
+    Set_Cursor(1, 0)
+	Send_Constant_String(#ReflowMessage)
+
+    Set_Cursor(2,0)
+    WriteData(#'Tp:')
+    WriteData(#Reflow_temp)
+    WriteData(#0b11011111)
+    WriteData(#'C ')
+    WriteData(#Reflow_time)
+    WriteData(#'s')
+
+checkReflowTimeINC:
+    jb PB0, checkReflowTimeDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB0, checkReflowTimeDEC   ; if the button is not pressed jump
+	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Reflow_time, #0x60, jumpINCReflowTime
+
+checkReflowTimeDEC:
+    jb PB1, checkReflowTempINC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB1, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Reflow_time, #0x30, jumpDECReflowTime
+
+checkReflowTempINC:
+    jb PB2, checkReflowTempDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB2, checkReflowTempDEC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB2, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Reflow_temp, #0x260, jumpINCReflowTemp
+
+checkReflowTempDEC:
+    jb PB3, checkReflowTempDEC  ; if the button is not pressed jump
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB3, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
+	jnb PB3, $		; Wait for button release.  The '$' means: jump to same instruction.
+    cjne Reflow_temp, #0x230, jumpDECReflowTemp
+
+continueReflowSetting:
+    jb PB4, setReflow  ; if the 'MODE' button is not pressed repeat
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB4, setReflow   ; if the 'BOOT' button is not pressed repeat
+	jnb PB4, $		; Wait for button release.  The '$' means: jump to same instruction.
+	; A valid press of the 'MODE' button has been detected.
+
+    mov a, Mode_sel ;increment mode
+    add a, #0x01
+    mov Mode_sel, a
+    ljmp activateOven
+----------------------------------------------
+jumpINCReflowTime:
+    ljmp INCReflowTime
+
+jumpDECReflowTime:
+    ljmp DECReflowTime
+
+jumpINCReflowTemp:
+    ljmp INCReflowTemp
+
+jumpDECReflowTemp:
+    ljmp DECReflowTemp
+----------------------------------------------------------------------------------------------------------
+activateOven:
+	WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
+
+	Set_Cursor(1, 0)
+	Send_Constant_String(#ConfirmStart)
+
+	jb PB6, activateOven  ; if the 'MODE' button is not pressed repeat
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb PB6, activateOven   ; if the 'BOOT' button is not pressed repeat
+	jnb PB6, $		; Wait for button release.  The '$' means: jump to same instruction.
+	; A valid press of the 'MODE' button has been detected.
+	
+	ret
+----------------------------------------------------------------------------------------------------------
+
+INCSoakTime:
+    mov a, Soak_time
+    add a, #0x05
+    mov Soak_time, a
+    ljmp setSoak
+
+DECSoakTime:
+    mov a, Soak_time
+    sub a, #0x05
+    mov Soak_time, a
+    ljmp setSoak
+
+INCSoakTemp:
+    mov a, Soak_temp
+    add a, #0x05
+    mov Soak_temp, a
+    ljmp setSoak
+
+DECSoakTime:
+    mov a, Soak_temp
+    sub a, #0x05
+    mov Soak_temp, a
+    ljmp setSoak
+
+-------------------------
+INCReflowTime:
+    mov a, Reflow_time
+    add a, #0x05
+    mov Reflow_time, a
+    ljmp setReflow
+
+DECReflowTime:
+    mov a, Reflow_time
+    sub a, #0x05
+    mov Reflow_time, a
+    ljmp setReflow
+
+INCReflowTemp:
+    mov a, Reflow_temp
+    add a, #0x05
+    mov Reflow_temp, a
+    ljmp setReflow
+
+DECReflowTime:
+    mov a, Reflow_temp
+    sub a, #0x05
+    mov Reflow_temp, a
+    ljmp setReflow
+
     END
