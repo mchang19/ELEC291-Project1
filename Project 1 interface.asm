@@ -448,9 +448,9 @@ main:
     clr finished_flag
     
     lcall InitSerialPort
-	lcall defaultMessageDisplay
    	lcall INIT_SPI
-
+	lcall defaultMessageDisplay
+	
     sjmp Forever
 	
 
