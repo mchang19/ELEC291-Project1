@@ -105,13 +105,13 @@ finished_flag:     dbit 1 ;
 
 cseg
 ; These 'equ' must match the wiring between the microcontroller and the LCD!
-LCD_RS equ P1.1
-LCD_RW equ P1.2
-LCD_E  equ P1.3
-LCD_D4 equ P3.2
-LCD_D5 equ P3.3
-LCD_D6 equ P3.4
-LCD_D7 equ P3.5
+LCD_RS equ P0.5
+LCD_RW equ P0.6
+LCD_E  equ P0.7
+LCD_D4 equ P1.2
+LCD_D5 equ P1.3
+LCD_D6 equ P1.4
+LCD_D7 equ P1.6
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
@@ -129,19 +129,6 @@ Ramp_Up:		db "RAMP UP", 0
 Soaking: 		db "SOAKING", 0
 Reflow:			db "REFLOW"
 Cool_Down:		db "COOL DOWN", 0
-
-;                     1234567890123456    <- This helps determine the location of the counter
-Initial_Message:  db 'Welcome! To cont', 0
-ToContinueClick:  db 'pls click mode  ', 0
-
-SoakMessage:      db 'Soak Settings:  ', 0
-
-ConfirmStart:	  db 'Confirm to start', 0
-
-OvenDisplay:      db 't=   s tmp=   °C', 0
-OvenDisplay2:     db 's:     otmp=  °C', 0
-
-;rfl, sk, rps, rpp, coo
 
  
 ;---------------------------------;
@@ -411,6 +398,13 @@ main:
     setb EA   ; Enable Global interrupts
     lcall LCD_4BIT
     
+    Set_Cursor(1,1)
+    Send_Constant_String(#Temp)
+    Set_Cursor(1, 10)
+    Send_Constant_String(#TJ)
+    Set_Cursor(2, 1)
+    Send_Constant_String(#Time)
+    
     mov a, #0
     mov Mode_sel, a
     
@@ -449,52 +443,37 @@ main:
     
     lcall InitSerialPort
    	lcall INIT_SPI
-	lcall defaultMessageDisplay
 
-    sjmp Forever
+    ljmp state0
 	
 
 Forever:
 	clr CE_ADC
 	
-	mov R0, #00000001B
-	lcall DO_SPI_G
+;	mov R0, #00000001B
+;	lcall DO_SPI_G
+;	
+;	mov R0, #10000000B
+;	lcall DO_SPI_G
+;	
+;	mov a, R1
+;	anl a, #00000011B
+;	mov Result+1, a
+;	
+;	mov R0, #55H
+;	lcall DO_SPI_G
+;	
+;	mov Result, R1
 	
-	mov R0, #10000000B
-	lcall DO_SPI_G
-	
-	mov a, R1
-	anl a, #00000011B
-	mov Result+1, a
-	
-	mov R0, #55H
-	lcall DO_SPI_G
-	
-	mov Result, R1
-	
-	setb CE_ADC
-	lcall Delay
-	lcall Calculate_Temp
-	sjmp Forever
 
 
-Calculate_Temp:
-
-	mov x, Result
-	mov x2, Result
-	mov x3, Result
-	
-	mov x+1, Result+1
-	mov x2+1, Result+1
-	mov x3+1, Result+1
-	
+;read cold junction	
+	mov x, R0
+	mov x+1, R1
 	mov x+2, #0
-
+	mov x+3, #0	
 	
-	mov x+3, #0
-
-
-;ADC to Celsius
+	;convert cold junction voltage to temperature
 	Load_y(410)
 	lcall mul32
 	Load_y(1023)
@@ -502,12 +481,125 @@ Calculate_Temp:
 	Load_y(273)
 	lcall sub32
 	
-;Do same thing to both temp readings (Hot and cold)
-	mov x, ;something
-	Load_y(___)
-	lcall add32
+	mov tc, x
+	mov tc+1, x+1
+	mov tc+2, x+2
+	mov tc+3, x+3
+	
+	;read hot voltage and calculate temperature
+
+	mov x, R0
+	mov x+1, R1
+	mov x+2, #0
+	mov x+3, #0
+	load_y(806)
+	lcall mul32
+	
+	mov y, tc
+	mov y+1, tc+1
+	mov y+2, tc+2
+	mov y+3, tc+3
+	lcall add32       ;Th + Tc
+	
+	load_y(10000)
+	lcall div32
+	mov temp, x 
+	mov temp+1, x+1
+	mov temp+2, x+2
+	mov temp+3, x+3
+
+	Wait_Milli_Seconds(#250)
+	
+	WriteCommand(#0x80)
+	Send_Constant_String(#P_STATE)
+	WriteCommand(#0x89)
+	WriteData(#' ')
+	lcall Set_LEDS
+	
+	mov a, state
+	cjne a, #0, next1
+	ret
 	
 	
+	
+
+state0:
+	cjne a, #0, state1
+	mov pwm, #0
+	jb PB6, state0_done
+	jnb PB6, $ ; Wait for key release
+	mov state, #1
+
+state0_done:
+	lcall forever
+
+state1:
+	cjne a, #1, state2
+	mov pwm, #100
+	mov sec, #0
+	mov a, temp_soak
+	clr c
+	subb a, temp
+	jnc state1_done
+	mov state, #2
+
+state1_done:
+	lcall forever
+
+state2:
+	cjne a, #2, state3
+	mov pwm, #20
+	mov a, time_soak
+	clr c
+	subb a, sec
+	jnc state2_done
+	mov state, #3
+
+state2_done:
+	lcall forever
+	
+
+state3:
+	cjne a, #3, state4
+	mov pwm, #100
+	mov sec, #0
+	mov a, temp_reflow
+	clr c
+	subb a, temp
+	jnc state3_done
+	mov state, #4
+
+state3_done:
+	lcall forever
+	
+state4:
+	cjne a, #4, state5
+	mov pwm, #20
+	mov a, time_reflow
+	clr c
+	subb a, sec
+	jnc state4_done
+	mov state, #5
+	
+state4_done:
+	lcall forever
+	
+state5:
+	cjne a, #5, state0
+	mov pwm, #0
+	mov a, temp_reflow
+	clr c
+	subb a, temp
+	jnc state5_done
+	mov state, #0
+	
+state5_done:
+	lcall forever
+		
+		
+		
+		
+
 	;change number to BCD for display
 ;for oven temp
 	lcall hex2bcd
@@ -536,225 +628,5 @@ Calculate_Temp:
 	Set_Cursor(1,9)
 	Display_char(#'C')
 	
-	lcall SendString
-	ret
---------------------------------------------------------------------------------------------------------------
-defaultMessageDisplay:
-    WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-
-    Set_Cursor(1, 0)
-	Send_Constant_String(#InitMessage)
-    Set_Cursor(2, 0)
-    Send_Constant_String(#ToContinueClick)
-
-checkContinue:
-    jb THE MODE BUTTON, checkContinue  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb THE MODE BUTTON, checkContinue   ; if the 'BOOT' button is not pressed repeat
-	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
-
-    mov a, Mode_sel ;increment mode
-    add a, #0x01
-    mov Mode_sel, a
-
-;selectLanguage: To Be added later
-
-setSoak:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-    Set_Cursor(1, 0)
-	Send_Constant_String(#SoakMessage)
-
-    Set_Cursor(2,0)
-    WriteData(#Soak_temp)
-    WriteData(#0b11011111)
-    WriteData(#'C   ')
-    WriteData(#Soak_time)
-    WriteData(#'s')
-
-checkSoakTimeINC:
-    jb INCREMENT_BUT, checkSoakTimeDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT, checkSoakTimeDEC   ; if the button is not pressed jump
-	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_time, #0x120, jumpINCSoakTime
-
-checkSoakTimeDEC:
-    jb INCREMENT_BUT, checkSoakTempINC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_time, #0x60, jumpDECSoakTime
-
-checkSoakTempINC:
-    jb INCREMENT_BUT2, checkSoakTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT2, checkSoakTempDEC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_temp, #0x200, jumpINCSoakTemp
-
-checkSoakTempDEC:
-    jb INCREMENT_BUT2, checkSoakTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT2, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_temp, #0x140, jumpDECSoakTemp
-
-continueSoakSetting:
-    jb THE MODE BUTTON, setSoak  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb THE MODE BUTTON, setSoak   ; if the 'BOOT' button is not pressed repeat
-	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
-
-    mov a, Mode_sel ;increment mode
-    add a, #0x01
-    mov Mode_sel, a
-    ljmp setReflow
-----------------------------------------------
-jumpINCSoakTime:
-    ljmp INCSoakTime
-
-jumpDECSoakTime:
-    ljmp DECSoakTime
-
-jumpINCSoakTemp:
-    ljmp INCSoakTemp
-
-jumpDECSoakTemp:
-    ljmp DECSoakTemp
-----------------------------------------------------------------------------------------------------------
-setReflow:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-    Set_Cursor(1, 0)
-	Send_Constant_String(#ReflowMessage)
-
-    Set_Cursor(2,0)
-    WriteData(#'Tp:')
-    WriteData(#Reflow_temp)
-    WriteData(#0b11011111)
-    WriteData(#'C ')
-    WriteData(#Reflow_time)
-    WriteData(#'s')
-
-checkReflowTimeINC:
-    jb INCREMENT_BUT, checkReflowTimeDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT, checkReflowTimeDEC   ; if the button is not pressed jump
-	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_time, #0x60, jumpINCReflowTime
-
-checkReflowTimeDEC:
-    jb INCREMENT_BUT, checkReflowTempINC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_time, #0x30, jumpDECReflowTime
-
-checkReflowTempINC:
-    jb INCREMENT_BUT2, checkReflowTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT2, checkReflowTempDEC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_temp, #0x260, jumpINCReflowTemp
-
-checkReflowTempDEC:
-    jb INCREMENT_BUT2, checkReflowTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb INCREMENT_BUT2, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb INCREMENT_BUT2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_temp, #0x230, jumpDECReflowTemp
-
-continueReflowSetting:
-    jb THE MODE BUTTON, setReflow  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb THE MODE BUTTON, setReflow   ; if the 'BOOT' button is not pressed repeat
-	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
-
-    mov a, Mode_sel ;increment mode
-    add a, #0x01
-    mov Mode_sel, a
-    ljmp activateOven
-----------------------------------------------
-jumpINCReflowTime:
-    ljmp INCReflowTime
-
-jumpDECReflowTime:
-    ljmp DECReflowTime
-
-jumpINCReflowTemp:
-    ljmp INCReflowTemp
-
-jumpDECReflowTemp:
-    ljmp DECReflowTemp
-----------------------------------------------------------------------------------------------------------
-activateOven:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-
-	Set_Cursor(1, 0)
-	Send_Constant_String(#ConfirmStart)
-
-	jb START_BUTTON, activateOven  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb START_BUTTON, activateOven   ; if the 'BOOT' button is not pressed repeat
-	jnb START_BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
-	
-	ret
-----------------------------------------------------------------------------------------------------------
-
-INCSoakTime:
-    mov a, Soak_time
-    add a, #0x05
-    mov Soak_time, a
-    ljmp setSoak
-
-DECSoakTime:
-    mov a, Soak_time
-    sub a, #0x05
-    mov Soak_time, a
-    ljmp setSoak
-
-INCSoakTemp:
-    mov a, Soak_temp
-    add a, #0x05
-    mov Soak_temp, a
-    ljmp setSoak
-
-DECSoakTime:
-    mov a, Soak_temp
-    sub a, #0x05
-    mov Soak_temp, a
-    ljmp setSoak
-
--------------------------
-INCReflowTime:
-    mov a, Reflow_time
-    add a, #0x05
-    mov Reflow_time, a
-    ljmp setReflow
-
-DECReflowTime:
-    mov a, Reflow_time
-    sub a, #0x05
-    mov Reflow_time, a
-    ljmp setReflow
-
-INCReflowTemp:
-    mov a, Reflow_temp
-    add a, #0x05
-    mov Reflow_temp, a
-    ljmp setReflow
-
-DECReflowTime:
-    mov a, Reflow_temp
-    sub a, #0x05
-    mov Reflow_temp, a
-    ljmp setReflow
-
+	lcall SendString 	
     END
