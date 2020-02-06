@@ -23,10 +23,13 @@ Initial_Message:  db 'Welcome! To cont', 0
 ToContinueClick:  db 'pls click mode  ', 0
 
 SoakMessage:      db 'Soak Settings:  ', 0
-Setting_Alarm:    db 'Setting Alarm',0
+OvenDisplay:      db 't=   s tmp=   °C', 0
+OvenDisplay2:     db 's:     otmp=  °C', 0
+
+;rfl, sk, rps, rpp, coo
 
 
-+Outside_temp: 	ds 1;
+Outside_temp: 	ds 1;
 Oven_temp:	ds 1;
 Reflow_time:	ds 1;
 Reflow_temp:	ds 1;
@@ -36,6 +39,8 @@ Mode_sel:     	ds 1 ;
 
 defaultMessageDisplay:
     lcall LCD_4BIT
+    WriteCommand(#0x01)
+    Wait_Milli_Seconds(#2)
     Set_Cursor(1, 0)
 	Send_Constant_String(#InitMessage)
     Set_Cursor(2, 0)
@@ -180,6 +185,9 @@ jumpINCReflowTemp:
 
 jumpDECReflowTemp:
     ljmp DECReflowTemp
+----------------------------------------------------------------------------------------------------------
+
+activateOven:
 
 
 
