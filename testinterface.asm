@@ -47,22 +47,22 @@ org 0x002B
 	
 ;;;;;declaring variables such as set parameters, seconds, mode_sel etc
 dseg at 30H
-Count1ms:		ds 2
-BCD_counter1:	ds 1
-Reflow_time:	ds 8;
-Reflow_temp:	ds 8;
-Soak_time:		ds 8;
-Soak_temp:		ds 8;
-Mode_sel:     	ds 8;
+Count1ms:		ds 2;
+BCD_counter1:	ds 1;
+Reflow_time:	ds 2;
+Reflow_temp:	ds 2;
+Soak_time:		ds 2;
+Soak_temp:		ds 2;
+Mode_sel:     	ds 2;
 
-ReflowTemp_UB:	ds 8;
-ReflowTemp_LB:	ds 8;
-ReflowTime_UB:	ds 8;
-ReflowTime_LB:	ds 8;
-SoakTemp_UB:	ds 8;
-SoakTemp_LB:	ds 8;
-SoakTime_UB:	ds 8;
-SoakTime_LB:	ds 8;
+ReflowTemp_UB:	ds 2;
+ReflowTemp_LB:	ds 2;
+ReflowTime_UB:	ds 2;
+ReflowTime_LB:	ds 2;
+SoakTemp_UB:	ds 2;
+SoakTemp_LB:	ds 2;
+SoakTime_UB:	ds 2;
+SoakTime_LB:	ds 2;
 
 ;;;;;flags (?) using states so maybe uneeded
 bseg
@@ -203,28 +203,29 @@ main:
     ;Set mode for parameter set-up and intitialize all constants
     mov a, #0
     mov Mode_sel, a
-    mov a, #0xFF
+    mov a, #0x50
     mov ReflowTemp_UB, a
-    mov a, #0xFF
+    mov a, #0x00
     mov ReflowTemp_LB, a
-    mov a, #0xFF
+    mov a, #0x90
     mov ReflowTime_UB, a
-    mov a, #0xFF
+    mov a, #0x00
     mov ReflowTime_LB, a
-    mov a, #0x01
+    mov a, #0x20
     mov SoakTemp_UB, a
-    mov a, #0x01
+    mov a, #0x00
     mov SoakTemp_LB, a
-    mov a, #0x01
+    mov a, #0x00
     mov SoakTime_UB, a
-    mov a, #0x01
+    mov a, #0x00
     mov SoakTime_LB, a
     
-    mov a, SoakTemp_LB
-    mov Soak_temp, a
-    
-    mov a, SoakTime_LB
-    mov Soak_time, a
+    mov Soak_temp, SoakTemp_LB
+    mov Soak_temp+1, #0x01
+    mov Soak_time, SoakTime_LB
+    mov Reflow_temp, ReflowTemp_LB
+    mov Reflow_temp+1, #0x02
+    mov Reflow_time, ReflowTime_LB
 
     ; In case you decide to use the pins of P0 configure the port in bidirectional mode:
     mov P0M0, #0
@@ -234,6 +235,10 @@ main:
 
     ;set reflow and soak parameters
     lcall defaultMessageDisplay
+    Wait_Milli_Seconds(#50)
+    lcall setReflow
+    Wait_Milli_Seconds(#50)
+    lcall activateOven
     
 
 	Set_Cursor(1,1)
@@ -242,7 +247,7 @@ main:
     Send_Constant_String(#OvenDisplay2)
     
     setb one_seconds_flag
-    
+
 
 ;------------------------------------------------------------    
 defaultMessageDisplay:
@@ -271,19 +276,20 @@ checkContinue:
 ;selectLanguage: To Be added later
 
 setSoak:
-;	WriteCommand(#0x01)
-;   Wait_Milli_Seconds(#2)
-
     Set_Cursor(1, 1)
 	Send_Constant_String(#SoakMessage)
 
     Set_Cursor(2,1)
+    Display_BCD(Soak_temp+1)
     Display_BCD(Soak_temp)
  
     WriteData(#0b11011111) ; degree sign 
     Send_Constant_String(#Celsius)
-
-    Set_Cursor(2,14)
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
  	Display_BCD(Soak_time)
     WriteData(#'s')
 
@@ -293,7 +299,11 @@ checkSoakTimeINC:
 	jb PB0, checkSoakTimeDEC   ; if the button is not pressed jump
 	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Soak_time
-    cjne a, #120, jumpINCSoakTime
+    cjne a, #0x50, jumpINCSoakTime
+    
+    mov a, #0x30
+    mov Soak_time, a
+
 
 checkSoakTimeDEC:
     jb PB1, checkSoakTempINC  ; if the button is not pressed jump
@@ -301,8 +311,7 @@ checkSoakTimeDEC:
 	jb PB1, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
 	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Soak_time
-    cjne a, #60, jumpDECSoakTime
-
+    cjne a, #0x60, jumpDECSoakTime
 
 setSoakJump:		;can't reach branch
 	ljmp setSoak
@@ -324,16 +333,17 @@ checkSoakTempDEC:
     cjne a, #140, jumpDECSoakTemp
 
 continueSoakSetting:
-    jb PB4, setSoakJump  ; if the 'MODE' button is not pressed repeat
+    jb PB5, setSoakJump  ; if the 'MODE' button is not pressed repeat
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB4, setSoakJump   ; if the 'BOOT' button is not pressed repeat
-	jnb PB4, $		; Wait for button release.  The '$' means: jump to same instruction.
+	jb PB5, setSoakJump   ; if the 'BOOT' button is not pressed repeat
+	jnb PB5, $		; Wait for button release.  The '$' means: jump to same instruction.
 	; A valid press of the 'MODE' button has been detected.
 
     mov a, Mode_sel ;increment mode
     add a, #0x01
+    da a
     mov Mode_sel, a
-    ljmp setReflow
+    ret
 ;----------------------------------------------
 which_Mode:
 	mov a, Mode_sel
@@ -365,17 +375,20 @@ jumpDECSoakTemp:
     ljmp DECSoakTemp
 ;----------------------------------------------------------------------------------------------------------
 setReflow:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
+	Wait_Milli_Seconds(#50)
     Set_Cursor(1, 1)
 	Send_Constant_String(#ReflowMessage)
 
     Set_Cursor(2,1)
     Send_Constant_String(#TP)
-    WriteData(#Reflow_temp)
+    Display_BCD(Reflow_temp+1)
+    Display_BCD(Reflow_temp)
     WriteData(#0b11011111)
     Send_Constant_String(#Celsius)
-    WriteData(#Reflow_time)
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+ 	Display_BCD(Reflow_time)
     WriteData(#'s')
 
 checkReflowTimeINC:
@@ -384,7 +397,7 @@ checkReflowTimeINC:
 	jb PB0, checkReflowTimeDEC   ; if the button is not pressed jump
 	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Reflow_time
-    cjne a, #0x60, jumpINCReflowTime
+    cjne a, #0x90, jumpINCReflowTime
 
 checkReflowTimeDEC:
     jb PB1, checkReflowTempINC  ; if the button is not pressed jump
@@ -392,7 +405,7 @@ checkReflowTimeDEC:
 	jb PB1, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
 	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Reflow_time
-    cjne a, #0x30, jumpDECReflowTime
+    cjne a, #0x00, jumpDECReflowTime
 
 setReflowJump:
 	ljmp setReflow
@@ -402,7 +415,7 @@ checkReflowTempINC:
 	jb PB2, checkReflowTempDEC   ; if the 'BOOT' button is not pressed repeat
 	jnb PB2, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Reflow_temp
-    cjne a, #240, jumpINCReflowTemp
+    cjne a, #0x90, jumpINCReflowTemp
 
 checkReflowTempDEC:
     jb PB3, checkReflowTempDEC  ; if the button is not pressed jump
@@ -410,7 +423,7 @@ checkReflowTempDEC:
 	jb PB3, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
 	jnb PB3, $		; Wait for button release.  The '$' means: jump to same instruction.
     mov a, Reflow_temp
-    cjne a, #230, jumpDECReflowTemp
+    cjne a, #0x00, jumpDECReflowTemp
 
 continueReflowSetting:
     jb PB4, setReflowJump  ; if the 'MODE' button is not pressed repeat
@@ -421,8 +434,9 @@ continueReflowSetting:
 
     mov a, Mode_sel ;increment mode
     add a, #0x01
+    da a
     mov Mode_sel, a
-    ljmp activateOven
+    ret
 ;----------------------------------------------
 jumpINCReflowTime:
     ljmp INCReflowTime
@@ -455,24 +469,28 @@ activateOven:
 INCSoakTime:
     mov a, Soak_time
     add a, #0x05
+    da a
     mov Soak_time, a
     ljmp setSoak
 
 DECSoakTime:
     mov a, Soak_time
-    add a, #-0x05
+    add a, #0x95
+    da a
     mov Soak_time, a
     ljmp setSoak
 
 INCSoakTemp:
     mov a, Soak_temp
     add a, #0x05
+    da a
     mov Soak_temp, a
     ljmp setSoak
 
 DECSoakTemp:
     mov a, Soak_temp
-    add a, #-0x05
+    add a, #0x95
+    da a
     mov Soak_temp, a
     ljmp setSoak
 
@@ -480,24 +498,28 @@ DECSoakTemp:
 INCReflowTime:
     mov a, Reflow_time
     add a, #0x05
+    da a
     mov Reflow_time, a
     ljmp setReflow
 
 DECReflowTime:
     mov a, Reflow_time
-    add a, #-0x05
+    add a, #0x95
+    da a
     mov Reflow_time, a
     ljmp setReflow
 
 INCReflowTemp:
     mov a, Reflow_temp
     add a, #0x05
+    da a
     mov Reflow_temp, a
     ljmp setReflow
 
 DECReflowTemp:
     mov a, Reflow_temp
-    add a, #-0x05
+    add a, #0x95
+    da a
     mov Reflow_temp, a
     ljmp setReflow
     	
