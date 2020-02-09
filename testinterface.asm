@@ -49,20 +49,20 @@ org 0x002B
 dseg at 30H
 Count1ms:		ds 2
 BCD_counter1:	ds 1
-Reflow_time:	ds 1;
-Reflow_temp:	ds 1;
-Soak_time:		ds 1;
-Soak_temp:		ds 1;
-Mode_sel:     	ds 1;
+Reflow_time:	ds 8;
+Reflow_temp:	ds 8;
+Soak_time:		ds 8;
+Soak_temp:		ds 8;
+Mode_sel:     	ds 8;
 
-ReflowTemp_UB:	ds 1;
-ReflowTemp_LB:	ds 1;
-ReflowTime_UB:	ds 1;
-ReflowTime_LB:	ds 1;
-SoakTemp_UB:	ds 1;
-SoakTemp_LB:	ds 1;
-SoakTime_UB:	ds 1;
-SoakTime_LB:	ds 1;
+ReflowTemp_UB:	ds 8;
+ReflowTemp_LB:	ds 8;
+ReflowTime_UB:	ds 8;
+ReflowTime_LB:	ds 8;
+SoakTemp_UB:	ds 8;
+SoakTemp_LB:	ds 8;
+SoakTime_UB:	ds 8;
+SoakTime_LB:	ds 8;
 
 ;;;;;flags (?) using states so maybe uneeded
 bseg
@@ -211,23 +211,29 @@ main:
     mov ReflowTime_UB, a
     mov a, #0xFF
     mov ReflowTime_LB, a
-    mov a, #0xFF
+    mov a, #0x01
     mov SoakTemp_UB, a
-    mov a, #0xFF
+    mov a, #0x01
     mov SoakTemp_LB, a
-    mov a, #0x90
+    mov a, #0x01
     mov SoakTime_UB, a
-    mov a, #0x60
+    mov a, #0x01
     mov SoakTime_LB, a
     
+    mov a, SoakTemp_LB
+    mov Soak_temp, a
+    
+    mov a, SoakTime_LB
+    mov Soak_time, a
 
     ; In case you decide to use the pins of P0 configure the port in bidirectional mode:
     mov P0M0, #0
     mov P0M1, #0
     setb EA   ; Enable Global interrupts
    
+
     ;set reflow and soak parameters
-    ljmp defaultMessageDisplay
+    lcall defaultMessageDisplay
     
 
 	Set_Cursor(1,1)
@@ -237,7 +243,7 @@ main:
     
     setb one_seconds_flag
     
-	
+
 ;------------------------------------------------------------    
 defaultMessageDisplay:
     ;WriteCommand(#0x01)
@@ -272,12 +278,13 @@ setSoak:
 	Send_Constant_String(#SoakMessage)
 
     Set_Cursor(2,1)
-    WriteData(#Soak_temp)
+    Display_BCD(Soak_temp)
+ 
     WriteData(#0b11011111) ; degree sign 
     Send_Constant_String(#Celsius)
 
     Set_Cursor(2,14)
-    WriteData(#Soak_time)
+ 	Display_BCD(Soak_time)
     WriteData(#'s')
 
 checkSoakTimeINC:
