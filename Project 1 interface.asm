@@ -1,46 +1,23 @@
-; ISR_example.asm: a) Increments/decrements a BCD variable every half second using
-; an ISR for timer 2; b) Generates a 2kHz square wave at pin P3.7 using
-; an ISR for timer 0; and c) in the 'main' loop it displays the variable
-; incremented/decremented using the ISR for timer 2 on the LCD.  Also resets it to 
-; zero if the 'BOOT' pushbutton connected to P4.5 is pressed.
 $NOLIST
 $MODLP51
 $LIST
-
-; There is a couple of typos in MODLP51 in the definition of the timer 0/1 reload
-; special function registers (SFRs), so:
 
 TIMER0_RELOAD_L DATA 0xf2
 TIMER1_RELOAD_L DATA 0xf3
 TIMER0_RELOAD_H DATA 0xf4
 TIMER1_RELOAD_H DATA 0xf5
 
+
+
+;---------------;
+;  Constants    ;
+;---------------;
 CLK           EQU 22118400 ; Microcontroller system crystal frequency in Hz
 TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
 TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
 
-;----------------;
-;button variables;
-;----------------;
-
-;START_BUTTON   		equ P4.5
-;STOP_BUTTON       	equ P0.0
-;BUTTON1      		equ P0.1
-;BUTTON2       		equ P0.2
-;BUTTON3       		equ P0.3
-;BUTTON4       		equ P0.4
-;BUTTON5       		equ P0.5
-;BUTTON6       		equ P0.6
-;BUTTON7       		equ P0.6
-;BUTTON8       		equ P0.6
-;BUTTON9       		equ P0.6
-;BUTTON10      		equ P0.6
-;BUTTON11      		equ P0.6
-;BUTTON12      		equ P0.6
-;BUTTON13      		equ P0.6
-;RESET_BUTTON    	equ P0.6
 
 ; Reset vector
 org 0x0000
@@ -72,24 +49,25 @@ org 0x002B
 
 ; In the 8051 we can define direct access variables starting at location 0x30 up to location 0x7F
 dseg at 0x30
-Count1ms:     	ds 2 ; Used to determine when half second has passed
-BCD_counter: 	ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
-Outside_temp: 	ds 1;
-Oven_temp:		ds 1;
-Reflow_time:	ds 1;
-Reflow_temp:	ds 1;
-Soak_time:		ds 1;
-Soak_temp:		ds 1;
+Count1ms:     	ds 2; Used to determine when half second has passed
+BCD_counter: 	ds 1; The BCD counter incrememted in the ISR and displayed in the main loop
+cold_temp: 		ds 1;
+hot_temp:		ds 1;
+
+Reflow_time:	ds 2;
+Reflow_temp:	ds 2;
+Soak_time:		ds 2;
+Soak_temp:		ds 2;
 Mode_sel:     	ds 2;
-ReflowTemp_UB:	ds 8;
-ReflowTemp_LB:	ds 8;
-ReflowTime_UB:	ds 7;
-ReflowTime_LB:	ds 7;
-SoakTemp_UB:	ds 8;
-SoakTemp_LB:	ds 8;
-SoakTime_UB:	ds 7;
-SoakTime_LB:	ds 7;
+
+
+
 pwm:			ds 7;
+
+Result: 		ds 2;
+x:				ds 4;
+y:				ds 4;
+
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
 ; instructions with these variables.  This is how you define a 1-bit variable:
@@ -102,17 +80,17 @@ rampUp_flag:       dbit 1 ;
 reflow_flag:       dbit 1 ;
 coolDown_flag:     dbit 1 ;
 finished_flag:     dbit 1 ;
-PB0: dbit 1 ; Variable to store the state of pushbutton 0 after calling ADC_to_PB below TIME INC
-PB1: dbit 1 ; Variable to store the state of pushbutton 1 after calling ADC_to_PB below TIME DEC
-PB2: dbit 1 ; Variable to store the state of pushbutton 2 after calling ADC_to_PB below TEMP INC
-PB3: dbit 1 ; Variable to store the state of pushbutton 3 after calling ADC_to_PB below TEMP DEC
-PB4: dbit 1 ; Variable to store the state of pushbutton 4 after calling ADC_to_PB below MODE
-PB5: dbit 1 ; Variable to store the state of pushbutton 5 after calling ADC_to_PB below STOP
-PB6: dbit 1 ; Variable to store the state of pushbutton 6 after calling ADC_to_PB below START
 
 
 cseg
-; These 'equ' must match the wiring between the microcontroller and the LCD!
+
+;--------------;
+
+CE_ADC    EQU  P2.0 
+MY_MOSI   EQU  P2.1  
+MY_MISO   EQU  P2.2 
+MY_SCLK   EQU  P2.3 
+
 LCD_RS equ P0.5
 LCD_RW equ P0.6
 LCD_E  equ P0.7
@@ -120,19 +98,36 @@ LCD_D4 equ P1.2
 LCD_D5 equ P1.3
 LCD_D6 equ P1.4
 LCD_D7 equ P1.6
+
+;----------------;
+;button variables;
+;----------------;
+PB0        			equ P0.0 ;time inc
+PB1					equ P0.1 ;time dec
+PB2					equ P0.2 ;temp inc
+PB3					equ P0.3 ;temp dec
+PB4					equ P0.4 ;increment mode from continueReflowSetting
+PB5					equ P0.5 ;increment mode from continueSoakSetting
+PB6					equ P0.6 ;start button 
+MODE_BUTTON    		equ P0.7 ;mode
+
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
 
 ;                     	    1234567890123456    <- This helps determine the location of the counter
-Select_Language: 	db "Select language:", 0
-Error			db "ERROR", 0
-Time: 			db "Time:", 0
-Temp:			db "Temp:", 0
-TJ:				db "TJ:", 0
-TO:				db "TO:", 0
-Setting:		db "Setting", 0
-Activation: 	db "ACTIVATION", 0
+Select_Language:		db "Select language:", 0
+Error:					db "ERROR", 0
+Time:					db "Time:", 0
+
+TP:						db 'Tp:', 0
+Celsius:				db 'C ', 0  
+ReflowMessage:			db 'Reflow Settings:', 0
+
+ConfirmStart:			db 'Begin?	      ', 0
+;rfl, sk, rps, rpp, coo
+
+Activation: 		db "ACTIVATION", 0
 Ramp_Up:		db "RAMP UP", 0
 Soaking: 		db "SOAKING", 0
 Reflow:			db "REFLOW"
@@ -172,6 +167,10 @@ Timer0_Init:
 ; 2048 Hz square wave at pin P3.7 ;
 ;---------------------------------;
 Timer0_ISR:
+	clr TR0
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	setb TR0
 	cpl SOUND_OUT ; Connect speaker to P3.7!
 	reti
 
@@ -190,6 +189,7 @@ Timer2_Init:
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
+	
 	; Enable the timer and interrupts
     setb ET2  ; Enable timer 2 interrupt
     setb TR2  ; Enable timer 2
@@ -213,104 +213,26 @@ Timer2_ISR:
 	inc Count1ms+1
 
 Inc_Done:
-	; Check if half second has passed
+	; Check if a second has passed
 	mov a, Count1ms+0
-	cjne a, #low(1000), offset10 ; Warning: this instruction changes the carry flag!
+	cjne a, #low(1000), cant_reach ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(1000), offset10
-	sjmp millisecond_cnt
+	cjne a, #high(1000), cant_reach
+	sjmp one_millisecond
 
-offset10:
+
+cant_reach:
 	ljmp Timer2_ISR_done
-
-millisecond_cnt:
+	
+one_millisecond:
 	; 1000 milliseconds have passed.  Set a flag so the main program knows
-	setb seconds_flag ; Let the main program know 1 second had passed
+	setb one_seconds_flag ; Let the main program know one second had passed
 	cpl TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
 	; Reset to zero the milli-seconds counter, it is a 16-bit variable
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
-	
-check_Alarm:
-	mov a, Day
-	cjne a, #0x07, Weekday_Alarm
-	cjne a, #0x06, Weekday_Alarm
-	mov a, Hour
-	cjne a, Hour3, Main_counter
-	mov a, Minute
-	cjne a, Minute3, Main_counter
-	mov a, AM_flag
-	cjne a, AM_flag3, Main_counter
-	ljmp Alarm_on
-	
-Weekday_Alarm:
-	mov a, Hour
-	cjne a, Hour2, Main_counter
-	mov a, Minute
-	cjne a, Minute2, Main_counter
-	mov a, AM_flag
-	cjne a, AM_flag2, Main_counter
-	ljmp Alarm_on
-	
-Alarm_on:
-	clr a
-	setb ET0 
-	
-Main_counter:	
-	; Increment the BCD counter
-	mov a, BCD_counter
-	cjne a, #0x59, Increment_Sec ; Checks if 60 seconds has passed 
-	mov a, #0x00
-	mov BCD_counter, a
-	
-	clr a
-	mov a, Minute 
-	add a, #0x01 ; Increments 1 minute if 60 seconds passed
-	da a
-	mov Minute, a  
-	
-	clr a
-	mov a, Minute
-    cjne a, #0x60, Not_increment ; Checks if 60 minutes has passed
-	mov a, #0x00
-	mov Minute, a
-	
-	clr a
-	mov a, Hour 
-	add a, #0x01 ; Increments 1 hour if 60 seconds passed
-	da a
-	mov Hour, a
-
-	clr a
-	mov a, Hour 
-	cjne a, #0x13, Hour_increment ; Checks if 12 hours has passed
-	mov a, #0x01 ;----
-	mov Hour, a ;-----
-	
-Hour_increment:
-	clr a
-	mov a, Hour 
-	cjne a, #0x12, Not_increment ; Checks if 12 hours has passed
-	mov a, #0x01 ;----
-	cpl AM_Flag ;'nots' the AM_Flag if 12
-	jb AM_Flag, Day_increment
-	sjmp Not_increment
-	
-Day_increment:	
-	clr a
-	mov a, Day
-	add a, #0x01 ; Increments 1 full-day if AM->PM
-	da a
-	mov Day, a
-	
-	clr a
-	mov a, Day
-	cjne a, #0x08, Not_increment ; Checks if 7 days have passed 
-	mov a, #0x01
-	mov Day, a
-	
-	clr a	
+	sjmp Seconds_Inc
 	
 Increment_Sec:
 	mov a, BCD_counter
@@ -319,7 +241,7 @@ Increment_Sec:
 	mov BCD_counter, a
 	clr a
 	
-Not_increment:
+Dont_Inc:
 	
 Timer2_ISR_done:
 	pop psw
@@ -330,7 +252,9 @@ Timer2_ISR_decrement:
 	add a, #0x99 ; Adding the 10-complement of -1 is like subtracting 1.
 
 
-
+;---------------;
+; SPI and init  ;
+;---------------;
 
 ; Configure the serial port and baud rate
 InitSerialPort:
@@ -341,6 +265,7 @@ InitSerialPort:
     djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
     djnz R1, $-4 ; 22.51519us*222=4.998ms
     ; Now we can proceed with the configuration
+	
 	orl	PCON,#0x80
 	mov	SCON,#0x52
 	mov	BDRCON,#0x00
@@ -370,6 +295,7 @@ DO_SPI_G_LOOP:
 	djnz R2, DO_SPI_G_LOOP     
 	pop acc     
 	ret 
+;-------------------------------------------
 	
 Delay_one_second:
 	Wait_Milli_Seconds(#250)
@@ -396,96 +322,12 @@ SendString:
 SendStringDone:
     ret
 
-
-
-;---------------------------------;
-; Main program. Includes hardware ;
-; initialization and 'forever'    ;
-; loop.                           ;
-;---------------------------------;
-main:
-	; Initialization
-    mov SP, #0x7F
-    lcall Timer0_Init
-    lcall Timer2_Init
-    ; In case you decide to use the pins of P0, configure the port in bidirectional mode:
-    mov P0M0, #0
-    mov P0M1, #0
-    setb EA   ; Enable Global interrupts
-    lcall LCD_4BIT
-    
-    Set_Cursor(1,1)
-    Send_Constant_String(#Temp)
-    Set_Cursor(1, 10)
-    Send_Constant_String(#TJ)
-    Set_Cursor(2, 1)
-    Send_Constant_String(#Time)
-    
-    mov a, #0
-    mov Mode_sel, a
-    
-    mov a, #240
-    mov ReflowTemp_UB, a
-    
-    mov a, #230
-    mov ReflowTemp_LB, a
-    
-    mov a, #60
-    mov ReflowTime_UB
-    
-    mov a, #30
-    mov ReflowTime_LB
-    
-    mov a, #200
-    mov SoakTemp_UB
-    
-    mov a, #140
-    mov SoakTemp_LB
-    
-    mov a, #90
-    mov SoakTime_UB
-    
-    mov a, #60
-    mov SoakTime_LB
-    
-    clr error_flag
-    clr speak_flag
-    clr activation_flag
-    clr soaking_flag
-    clr rampUp_flag
-    clr reflow_flag
-    clr coolDown_flag
-    clr finished_flag
-    
-    lcall InitSerialPort
-   	lcall INIT_SPI
-
-    ljmp state0
-	
-
-forever:
-	clr CE_ADC
-	
-;	mov R0, #00000001B
-;	lcall DO_SPI_G
-;	
-;	mov R0, #10000000B
-;	lcall DO_SPI_G
-;	
-;	mov a, R1
-;	anl a, #00000011B
-;	mov Result+1, a
-;	
-;	mov R0, #55H
-;	lcall DO_SPI_G
-;	
-;	mov Result, R1
-	
-
-
-;read cold junction	
-	mov x, R0
-	mov x+1, R1
+;-----------------;
+; Voltage to Temp ;
+;-----------------;
+ConvertTemp:
+	mov x,   Result
+	mov x+1, Result+1
 	mov x+2, #0
 	mov x+3, #0	
 	
@@ -496,48 +338,95 @@ forever:
 	lcall div32
 	Load_y(273)
 	lcall sub32
-	
-	mov tc, x
-	mov tc+1, x+1
-	mov tc+2, x+2
-	mov tc+3, x+3
-	
-	;read hot voltage and calculate temperature
+	lcall hex2bcd
+	ret
 
-	mov x, R0
-	mov x+1, R1
-	mov x+2, #0
-	mov x+3, #0
-	load_y(806)
-	lcall mul32
+;---------------------------------;
+; Main program. Includes hardware ;
+; initialization and 'forever'    ;
+; loop.                           ;
+;---------------------------------;
+main:
+	; Initialization
+    mov SP, #0x7F
+    lcall LCD_4BIT
+    lcall Timer2_Init
+    lcall InitSerialPort
+   	lcall INIT_SPI
+   	
+   	clr error_flag
+    clr speak_flag
+    clr activation_flag
+    clr soaking_flag
+    clr rampUp_flag
+    clr reflow_flag
+    clr coolDown_flag
+    clr finished_flag
+    
+    mov Soak_temp, #low(SoakTemp_LB)
+    mov Soak_temp+1, #high(SoakTemp_UB)
+    mov Soak_time, SoakTime_LB
+    mov Reflow_temp, #low(ReflowTemp_LB)
+    mov Reflow_temp+1, #high(ReflowTemp_LB)
+    mov Reflow_time, ReflowTime_LB
+    
+    ; In case you decide to use the pins of P0, configure the port in bidirectional mode:
+    mov P0M0, #0
+    mov P0M1, #0
+    setb EA   ; Enable Global interrupts
+    
+    lcall defaultMessageDisplay
+    Wait_Milli_Seconds(#50)
+    lcall setReflow
+    Wait_Milli_Seconds(#50)
+    lcall activateOven
+    
 	
-	mov y, tc
-	mov y+1, tc+1
-	mov y+2, tc+2
-	mov y+3, tc+3
-	lcall add32       ;Th + Tc
-	
-	load_y(10000)
-	lcall div32
-	mov temp, x 
-	mov temp+1, x+1
-	mov temp+2, x+2
-	mov temp+3, x+3
+
+forever:
+	Read_Temp_Channel(0)
+	lcall Convert_temp
 
 	Wait_Milli_Seconds(#250)
-	
 	WriteCommand(#0x80)
 	Send_Constant_String(#P_STATE)
 	WriteCommand(#0x89)
 	WriteData(#' ')
 	lcall Set_LEDS
 	
+	;depending on what value 'state' contains, jump to that state 
 	mov a, state
 	cjne a, #0, next1
 	ret
 
 	lcall displayDefaultMessage
 
+next1:
+	mov a, state 
+	cjne a, #1, next2
+	sjmp state1
+next2:
+	mov a, state
+	cjne a, #2, next3
+	ljmp state2
+next3:
+	mov a, state
+	cjne a, #3, next4
+	ljmp state3
+next4:
+	mov a, state
+	cjne a, #4, next4
+	ljmp state4
+next5:
+	mov a, state
+	cjne a, #5, next1
+	ljmp state5
+
+twenty_percent2:
+	mov a, pwm
+	cjne a, #20, ret ;syntax is most definitely wrong
+	;start routine for setting 20% power 
+	
 ;state0:
 ;	cjne a, #0, state1
 ;	mov pwm, #0
@@ -551,19 +440,35 @@ state0_done:
 state1:
 	cjne a, #1, state2
 	mov pwm, #100
+	;/////setb whatever pin connected that controls oven 
 	mov sec, #0
 	mov a, Soak_temp
 	clr c
 	subb a, temp
+	lcall forever
+	cjne time, #60, check_temp
 	jnc state1_done
 	mov state, #2
 
+check_temp:
+	; is time = 60s? 
+	some jump happens
+	abort
+	
 state1_done:
 	lcall forever
 
 state2:
 	cjne a, #2, state3
 	mov pwm, #20
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	mov x, bcd
+	mov y, Soak_Temp
+	lcall x_gt_y
+	cjne mf, #1, 
+	
+	
 	mov a, Soak_time
 	clr c
 	subb a, sec
@@ -576,6 +481,7 @@ state2_done:
 state3:
 	cjne a, #3, state4
 	mov pwm, #100
+	;/////setb whatever pin connected that controls oven 
 	mov sec, #0
 	mov a, Reflow_temp
 	clr c
@@ -589,6 +495,7 @@ state3_done:
 state4:
 	cjne a, #4, state5
 	mov pwm, #20
+	lcall twenty_percent
 	mov a, Reflow_time
 	clr c
 	subb a, sec
@@ -601,6 +508,7 @@ state4_done:
 state5:
 	cjne a, #5, state0
 	mov pwm, #0
+	;clr whatever pin
 	mov a, Reflow_temp
 	clr c
 	subb a, temp
@@ -641,82 +549,92 @@ state5_done:
 	
 	lcall SendString 	
 
---------------------------------------------------------------------------------------------------------------
+;------------------------------------------------------------    
 defaultMessageDisplay:
-    WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
+    ;WriteCommand(#0x01)
+    ;Wait_Milli_Seconds(#2)
 
-    Set_Cursor(1, 0)
-	Send_Constant_String(#InitMessage)
-    Set_Cursor(2, 0)
+    Set_Cursor(1, 1)
+	Send_Constant_String(#Initial_Message)
+    Set_Cursor(2, 1)
     Send_Constant_String(#ToContinueClick)
+    
 
 checkContinue:
-    jb PB5, checkContinue  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb THE MODE BUTTON, checkContinue   ; if the 'BOOT' button is not pressed repeat
-	jnb THE MODE BUTTON, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
-
+	Set_Cursor(1, 1)
+	
+    pushbuttons(#7)		;check if mode button pushed
+    jz checkContinue;repeat this loop if not pressed
+    
     mov a, Mode_sel ;increment mode
     add a, #0x01
     mov Mode_sel, a
+    ;ljmp which_Mode
 
 ;selectLanguage: To Be added later
 
 setSoak:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-    Set_Cursor(1, 0)
+    Set_Cursor(1, 1)
 	Send_Constant_String(#SoakMessage)
 
-    Set_Cursor(2,0)
-    WriteData(#Soak_temp)
-    WriteData(#0b11011111)
-    WriteData(#'C   ')
-    WriteData(#Soak_time)
+    Set_Cursor(2,1)
+    Display_BCD(Soak_temp+1)
+    Display_BCD(Soak_temp)
+ 
+    WriteData(#0b11011111) ; degree sign 
+    Send_Constant_String(#Celsius)
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+ 	Display_BCD(Soak_time)
     WriteData(#'s')
 
 checkSoakTimeINC:
-    jb PB0, checkSoakTimeDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB0, checkSoakTimeDEC   ; if the button is not pressed jump
-	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_time, #0x120, jumpINCSoakTime
+	pushbuttons(#0)
+	jz checkSoakTimeDEC
+	
+    mov a, Soak_time
+    cjne a, #0x50, jumpINCSoakTime
+    
+    mov a, #0x30
+    mov Soak_time, a
+
 
 checkSoakTimeDEC:
-    jb PB1, checkSoakTempINC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB1, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_time, #0x60, jumpDECSoakTime
+	pushbuttons(#1)
+    jz checkSoakTempINC
+    
+    mov a, Soak_time
+    cjne a, #0x60, jumpDECSoakTime
 
+setSoakJump:		;can't reach branch
+	ljmp setSoak
+	
 checkSoakTempINC:
-    jb PB2, checkSoakTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB2, checkSoakTempDEC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_temp, #0x200, jumpINCSoakTemp
+    pushbuttons(#2)
+    jz checkSoakTempDEC
+    mov a, Soak_temp
+    cjne a, #200, jumpINCSoakTemp
 
 checkSoakTempDEC:
-    jb PB3, checkSoakTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB3, checkSoakTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB3, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Soak_temp, #0x140, jumpDECSoakTemp
+    pushbuttons(#3)
+    jz checkSoakTempINC
+    mov a, Soak_temp
+    cjne a, #140, jumpDECSoakTemp
 
 continueSoakSetting:
-    jb PB4, setSoak  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB4, setSoak   ; if the 'BOOT' button is not pressed repeat
-	jnb PB4, $		; Wait for button release.  The '$' means: jump to same instruction.
 	; A valid press of the 'MODE' button has been detected.
-
+	pushbuttons(#5)
+	jz setSoakJump
     mov a, Mode_sel ;increment mode
     add a, #0x01
+    da a
     mov Mode_sel, a
-    ljmp setReflow
-----------------------------------------------
+    ret
+;--------------------------------
+	
 jumpINCSoakTime:
     ljmp INCSoakTime
 
@@ -728,61 +646,61 @@ jumpINCSoakTemp:
 
 jumpDECSoakTemp:
     ljmp DECSoakTemp
-----------------------------------------------------------------------------------------------------------
+;----------------------------------------------------------------------------------------------------------
 setReflow:
-	WriteCommand(#0x01)
-    Wait_Milli_Seconds(#2)
-    Set_Cursor(1, 0)
+	Wait_Milli_Seconds(#50)
+    Set_Cursor(1, 1)
 	Send_Constant_String(#ReflowMessage)
 
-    Set_Cursor(2,0)
-    WriteData(#'Tp:')
-    WriteData(#Reflow_temp)
+    Set_Cursor(2,1)
+    Send_Constant_String(#TP)
+    Display_BCD(Reflow_temp+1)
+    Display_BCD(Reflow_temp)
     WriteData(#0b11011111)
-    WriteData(#'C ')
-    WriteData(#Reflow_time)
+    Send_Constant_String(#Celsius)
+	WriteData(#' ')
+	WriteData(#' ')
+	WriteData(#' ')
+ 	Display_BCD(Reflow_time)
     WriteData(#'s')
 
 checkReflowTimeINC:
-    jb PB0, checkReflowTimeDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB0, checkReflowTimeDEC   ; if the button is not pressed jump
-	jnb PB0, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_time, #0x60, jumpINCReflowTime
+    pushbuttons(#0)
+    jz checkReflowTimeDEC
+    mov a, Reflow_time
+    cjne a, #0x90, jumpINCReflowTime
 
 checkReflowTimeDEC:
-    jb PB1, checkReflowTempINC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB1, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB1, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_time, #0x30, jumpDECReflowTime
+	pushbuttons(#1)
+	jz checkReflowTempINC
+    mov a, Reflow_time
+    cjne a, #0x00, jumpDECReflowTime
 
+setReflowJump:
+	ljmp setReflow
 checkReflowTempINC:
-    jb PB2, checkReflowTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB2, checkReflowTempDEC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB2, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_temp, #0x260, jumpINCReflowTemp
+    pushbuttons(#2)
+    jz checkReflowTempDEC
+    mov a, Reflow_temp
+    cjne a, #0x90, jumpINCReflowTemp
 
 checkReflowTempDEC:
-    jb PB3, checkReflowTempDEC  ; if the button is not pressed jump
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB3, checkReflowTempINC   ; if the 'BOOT' button is not pressed repeat
-	jnb PB3, $		; Wait for button release.  The '$' means: jump to same instruction.
-    cjne Reflow_temp, #0x230, jumpDECReflowTemp
+    pushbuttons(#3)
+    jz checkReflowTempINC
+    
+    mov a, Reflow_temp
+    cjne a, #0x00, jumpDECReflowTemp
 
 continueReflowSetting:
-    jb PB4, setReflow  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB4, setReflow   ; if the 'BOOT' button is not pressed repeat
-	jnb PB4, $		; Wait for button release.  The '$' means: jump to same instruction.
 	; A valid press of the 'MODE' button has been detected.
-
+	pushbuttons(#4)
+	jz setReflowJump
     mov a, Mode_sel ;increment mode
     add a, #0x01
+    da a
     mov Mode_sel, a
-    ljmp activateOven
-----------------------------------------------
+    ret
+;----------------------------------------------
 jumpINCReflowTime:
     ljmp INCReflowTime
 
@@ -794,70 +712,73 @@ jumpINCReflowTemp:
 
 jumpDECReflowTemp:
     ljmp DECReflowTemp
-----------------------------------------------------------------------------------------------------------
+;----------------------------------------------------------------------------------------------------------
 activateOven:
 	WriteCommand(#0x01)
     Wait_Milli_Seconds(#2)
 
-	Set_Cursor(1, 0)
+	Set_Cursor(1, 1)
 	Send_Constant_String(#ConfirmStart)
-
-	jb PB6, activateOven  ; if the 'MODE' button is not pressed repeat
-	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb PB6, activateOven   ; if the 'BOOT' button is not pressed repeat
-	jnb PB6, $		; Wait for button release.  The '$' means: jump to same instruction.
-	; A valid press of the 'MODE' button has been detected.
 	
+	pushbuttons(#6)
+	jz activateOven
 	ret
-----------------------------------------------------------------------------------------------------------
+;----------------------------------------------------------------------------------------------------------
 
 INCSoakTime:
     mov a, Soak_time
     add a, #0x05
+    da a
     mov Soak_time, a
     ljmp setSoak
 
 DECSoakTime:
     mov a, Soak_time
-    sub a, #0x05
+    add a, #0x95
+    da a
     mov Soak_time, a
     ljmp setSoak
 
 INCSoakTemp:
     mov a, Soak_temp
     add a, #0x05
+    da a
     mov Soak_temp, a
     ljmp setSoak
 
-DECSoakTime:
+DECSoakTemp:
     mov a, Soak_temp
-    sub a, #0x05
+    add a, #0x95
+    da a
     mov Soak_temp, a
     ljmp setSoak
 
--------------------------
+;-------------------------
 INCReflowTime:
     mov a, Reflow_time
     add a, #0x05
+    da a
     mov Reflow_time, a
     ljmp setReflow
 
 DECReflowTime:
     mov a, Reflow_time
-    sub a, #0x05
+    add a, #0x95
+    da a
     mov Reflow_time, a
     ljmp setReflow
 
 INCReflowTemp:
     mov a, Reflow_temp
     add a, #0x05
+    da a
     mov Reflow_temp, a
     ljmp setReflow
 
-DECReflowTime:
+DECReflowTemp:
     mov a, Reflow_temp
-    sub a, #0x05
+    add a, #0x95
+    da a
     mov Reflow_temp, a
     ljmp setReflow
-
     END
