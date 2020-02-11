@@ -37,7 +37,8 @@ sound_index:
     db 0x0e, 0x00, 0x00 ; soaking
     db 0x0e, 0x65, 0x00 ; ramp to peak
     db 0x0f, 0x00, 0x00 ; reflow
-    db 0x0f, 0x50, 0x00 ; cooling---------change made by magan
+    db 0x0f, 0x50, 0x00 ; cooling
+    db 0x0f, 0xa5, 0x00 ; degrees celsius---------change made by magan
 
 
 ; Size of each sound in 'sound_index'
@@ -46,7 +47,7 @@ Size_sound:
 ;the size of the sound before 20 should be 25000
 
     db 0x00, 0x61, 0xa8 ; 0-20, "Too hot"
-    db 0x00, 0x75, 0x30 ; 100, 200, "Current state", all states
+    db 0x00, 0x75, 0x30 ; 100, 200, "Current state", all states, "Degrees Celsius"
     db 0x00, 0x79, 0x81 ; "Current temperature"
 	
 ; the size of the sound for 100 should be 30000
@@ -54,4 +55,4 @@ Size_sound:
 ; "The current state is" should be 30000
 ; "The current temperature is" should be 31000
 ; "Too hot" should be 25000
-; all states should be 30000
+; all states and "Degrees Celsius" should be 30000
