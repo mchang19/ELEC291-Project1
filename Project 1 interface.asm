@@ -72,7 +72,7 @@ y:				ds 4;
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
 ; instructions with these variables.  This is how you define a 1-bit variable:
 bseg
-error_flag:        dbit 1 ; Set to one in the ISR every time 1000 ms had passed 
+error_flag:        dbit 1 ; 
 speak_flag:        dbit 1 ;
 activation_flag:   dbit 1 ;
 soaking_flag:      dbit 1 ;
@@ -167,11 +167,11 @@ Timer0_Init:
 ; 2048 Hz square wave at pin P3.7 ;
 ;---------------------------------;
 Timer0_ISR:
-	clr TR0
-	mov TH0, #high(TIMER0_RELOAD)
-	mov TL0, #low(TIMER0_RELOAD)
-	setb TR0
 	cpl SOUND_OUT ; Connect speaker to P3.7!
+	jnb error_flag, notOn
+    reti
+notOn:
+	clr SOUND_OUT
 	reti
 
 ;---------------------------------;
@@ -447,13 +447,40 @@ state1:
 	subb a, temp
 	lcall forever
 	cjne time, #60, check_temp
+backtoState1:
 	jnc state1_done
 	mov state, #2
 
 check_temp:
-	; is time = 60s? 
-	some jump happens
-	abort
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	load_y(30)
+	lcall x_lteq_y
+
+highTemp:
+	jbc mf, abort
+	sjmp	backtoState1
+
+
+abort:
+	setb error_flag
+	clr OVEN_ON_PIN
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	Wait_Milli_Seconds(#200)
+	ljmp main
 	
 state1_done:
 	lcall forever
