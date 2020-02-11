@@ -63,7 +63,7 @@ Size_sound:
     db 0x00, 0x25, 0x85 ; 20 
 
 ; the size of the sound for 100 should be 30000
-; 							200 should be 30000
+; 					200 should be 30000
 ;		 "The current state is" should be 30000
 ;  "The current temperature is" should be 31000
-;					  "Too hot" should be 25000
+;				"Too hot" should be 25000
