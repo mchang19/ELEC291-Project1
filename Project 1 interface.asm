@@ -67,12 +67,12 @@ pwm:			ds 7;
 Result: 		ds 2;
 x:				ds 4;
 y:				ds 4;
-
+mf:				ds 1;
 
 ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
 ; instructions with these variables.  This is how you define a 1-bit variable:
 bseg
-error_flag:        dbit 1 ; 
+error_flag:        dbit 1 ; Set to one in the ISR every time 1000 ms had passed 
 speak_flag:        dbit 1 ;
 activation_flag:   dbit 1 ;
 soaking_flag:      dbit 1 ;
@@ -113,12 +113,14 @@ MODE_BUTTON    		equ P0.7 ;mode
 
 $NOLIST
 $include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
+$include(math32.inc)
+$include(macros.inc)
 $LIST
 
 ;                     	    1234567890123456    <- This helps determine the location of the counter
-Select_Language:		db "Select language:", 0
-Error:					db "ERROR", 0
-Time:					db "Time:", 0
+Select_Language:		db 'Select language:', 0
+Error:					db 'ERROR', 0
+Time:					db 'Time:', 0
 
 TP:						db 'Tp:', 0
 Celsius:				db 'C ', 0  
@@ -127,11 +129,11 @@ ReflowMessage:			db 'Reflow Settings:', 0
 ConfirmStart:			db 'Begin?	      ', 0
 ;rfl, sk, rps, rpp, coo
 
-Activation: 		db "ACTIVATION", 0
-Ramp_Up:		db "RAMP UP", 0
-Soaking: 		db "SOAKING", 0
-Reflow:			db "REFLOW"
-Cool_Down:		db "COOL DOWN", 0
+Activation: 		db 'ACTIVATION', 0
+Ramp_Up:		db 'RAMP UP', 0
+Soaking: 		db 'SOAKING', 0
+Reflow:			db 'REFLOW'
+Cool_Down:		db 'COOL DOWN', 0
 
 ;                     1234567890123456    <- This helps determine the location of the counter
 Initial_Message:  db 'Welcome! To cont', 0
@@ -173,7 +175,6 @@ Timer0_ISR:
 notOn:
 	clr SOUND_OUT
 	reti
-
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
 ; for timer 2                     ;
@@ -338,7 +339,7 @@ ConvertTemp:
 	lcall div32
 	Load_y(273)
 	lcall sub32
-	lcall hex2bcd
+
 	ret
 
 ;---------------------------------;
@@ -379,14 +380,15 @@ main:
     Wait_Milli_Seconds(#50)
     lcall setReflow
     Wait_Milli_Seconds(#50)
-    lcall activateOven
+    lcall activateOven  ;technically our 'state 0' 
     
 	
 
 forever:
 	Read_Temp_Channel(0)
-	lcall Convert_temp
-
+	lcall ConvertTemp
+	lcall hex2bcd
+	
 	Wait_Milli_Seconds(#250)
 	WriteCommand(#0x80)
 	Send_Constant_String(#P_STATE)
@@ -422,10 +424,6 @@ next5:
 	cjne a, #5, next1
 	ljmp state5
 
-twenty_percent2:
-	mov a, pwm
-	cjne a, #20, ret ;syntax is most definitely wrong
-	;start routine for setting 20% power 
 	
 ;state0:
 ;	cjne a, #0, state1
@@ -434,25 +432,26 @@ twenty_percent2:
 ;	jnb PB6, $ ; Wait for key release
 ;	mov state, #1
 ;
-state0_done:
-	lcall forever
+;state0_done:
+;	lcall forever
 
 state1:
 	cjne a, #1, state2
 	mov pwm, #100
-	;/////setb whatever pin connected that controls oven 
+	;setb whatever pin for SSR
 	mov sec, #0
 	mov a, Soak_temp
 	clr c
 	subb a, temp
 	lcall forever
-	cjne time, #60, check_temp
-backtoState1:
+	cjne time, #60, check_temp   ;auto termination thing
+	
+backtoState1:	
 	jnc state1_done
 	mov state, #2
 
 check_temp:
-	Read_Temp_Channel(#0)
+Read_Temp_Channel(#0)
 	lcall ConvertTemp
 	load_y(30)
 	lcall x_lteq_y
@@ -488,19 +487,46 @@ state1_done:
 state2:
 	cjne a, #2, state3
 	mov pwm, #20
-	Read_Temp_Channel(#0)
-	lcall ConvertTemp
-	mov x, bcd
-	mov y, Soak_Temp
-	lcall x_gt_y
-	cjne mf, #1, 
 	
+	lcall twenty_percent
+	lcall twenty_percent2
 	
 	mov a, Soak_time
 	clr c
 	subb a, sec
 	jnc state2_done
 	mov state, #3
+	
+twenty_percent:
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	mov x, bcd
+	mov y, Soak_Temp
+	lcall x_gt_y
+	cjne mf, #1, go_back
+	sjmp turn_off
+
+twenty_percent2:
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	mov x, bcd
+	mov y, Soak_Temp
+	lcall x_lt_y
+	cjne mf, #1, go_back
+	sjmp turn_on
+	
+turn_on:
+	;setb whatever pin for SSR
+	ret
+	
+turn_off:
+	;clear whatever pin for SSR
+	ret 
+	
+go_back:
+	ret
+	
+
 
 state2_done:
 	lcall forever
@@ -508,7 +534,7 @@ state2_done:
 state3:
 	cjne a, #3, state4
 	mov pwm, #100
-	;/////setb whatever pin connected that controls oven 
+	;setb whatever pin for SSR 
 	mov sec, #0
 	mov a, Reflow_temp
 	clr c
@@ -522,13 +548,34 @@ state3_done:
 state4:
 	cjne a, #4, state5
 	mov pwm, #20
-	lcall twenty_percent
+	
+	lcall twenty_percent3
+	lcall twenty_percent4
+	
 	mov a, Reflow_time
 	clr c
 	subb a, sec
 	jnc state4_done
 	mov state, #5
 	
+twenty_percent3:
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	mov x, bcd
+	mov y, Reflow_Temp
+	lcall x_gt_y
+	cjne mf, #1, go_back
+	sjmp turn_off
+
+twenty_percent4:
+	Read_Temp_Channel(#0)
+	lcall ConvertTemp
+	mov x, bcd
+	mov y, Reflow_Temp
+	lcall x_lt_y
+	cjne mf, #1, go_back
+	sjmp turn_on
+		
 state4_done:
 	lcall forever
 	
@@ -546,7 +593,7 @@ state5_done:
 	lcall forever
 		
 
-	;change number to BCD for display
+;change number to BCD for display
 ;for oven temp
 	lcall hex2bcd
 	Send_BCD(bcd)
@@ -749,6 +796,7 @@ activateOven:
 	
 	pushbuttons(#6)
 	jz activateOven
+	
 	ret
 ;----------------------------------------------------------------------------------------------------------
 
