@@ -29,8 +29,6 @@ accumulate_loop:
 	lcall add32
 	Load_Y(273)
 	lcall sub32
-	lcall hex2bcd
-	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
 ret
 
 SendTemp:
@@ -54,6 +52,7 @@ SendTemp:
 	mov a, bcd+0
 	anl a, #0xf
 	movc a, @a+dptr
+	lcall putchar
 	
 	mov a, #'\r'
 	lcall putchar
