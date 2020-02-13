@@ -1,59 +1,65 @@
 
 ;------------Retreive temp readings from adc---------------------;
-
-;Read_Temp_Channel mac	
-;	mov b, #%0
-;	lcall ?Read_Temp_Channel
-;endmac
-
-;?Read_Temp_Channel:
-;	clr CE_ADC
-;	mov R0, #00000001B
-;	lcall DO_SPI_G
-;	
-;	;the following set of instructions replace 	'mov R0, #10000000B' 
-;	;since we could be dealing with non-zero channels
-;	mov a, b ;specify channel 
-;	swap a
-;	anl a, #0F0H  ;AND with upper 4 MSB's
-;	setb acc.7    ;MSB set 
-;	mov R0, a
-;	
-;	;back to familiar code
-;	lcall DO_SPI_G
-;	mov a, R1
-;	anl a, #00000011B
-;	mov Result+1, a
-;	mov R0, #55H
-;	lcall DO_SPI_G
-;	mov Result, R1
-;	setb CE_ADC
-;	ret
-
 read_temperature:
-	clr EA
+	; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
-	mov x+0, AD0DAT1
-	lcall Wait40uSec
+    mov x+0, AD0DAT1
+	mov R7, #255
+    lcall Wait10us
+accumulate_loop:
+    mov y+0, AD0DAT1
+    mov y+1, #0
+    mov y+2, #0
+    mov y+3, #0
+    lcall add32
+    lcall Wait10us
+	djnz R7, accumulate_loop
 	
-Convert2Temp:
-	Load_y(41)
+	; Now divide by 16 (2^4)
+	Load_Y(16)
+	lcall div32
+	; x has now the 12-bit representation of the temperature
+	
+	; Convert to temperature (C)
+	Load_Y(410) ; Vref is 3.3V
 	lcall mul32
-	Load_y(10)
+	Load_Y(5) ; 2^12-1
 	lcall div32
-	Load_y(1023)
-	lcall div32
-	Load_y(120)
-	lcall div32
-	Load_y(487805)
-	lcall mul32
-	Load_y(10)
-	lcall div32
-	Load_y(22)
+	Load_Y(22)
 	lcall add32
+	Load_Y(273)
+	lcall sub32
+	lcall hex2bcd
+	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
 ret
 
+SendTemp:
+	mov dptr, #HexAscii 
 	
+	mov a, bcd+1
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+1
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+
+	mov a, bcd+0
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+0
+	anl a, #0xf
+	movc a, @a+dptr
+	
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar	
+	ret
 		
 
 
