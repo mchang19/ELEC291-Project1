@@ -3,11 +3,11 @@
 read_temperature:
 	; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
-    mov x+0, AD0DAT1
+    mov x+0, AD0DAT0
 	mov R7, #255
     lcall Wait10us
 accumulate_loop:
-    mov y+0, AD0DAT1
+    mov y+0, AD0DAT0
     mov y+1, #0
     mov y+2, #0
     mov y+3, #0
