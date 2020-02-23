@@ -1,4 +1,3 @@
-
 SendTemp:
 	mov dptr, #HexAscii 
 	
@@ -130,7 +129,7 @@ accumulate_loop:
 	lcall mul32
 	Load_y(((1<<12)-1)) ; 2^12-1
 	lcall div32
-	Load_y(203)
+	Load_y(255)
 	lcall mul32
 	Load_y(100)
 	lcall div32
@@ -139,8 +138,12 @@ accumulate_loop:
 	
 	mov temp, x+0			;store result of thermocouple in temp
 	mov temp+1, x+1
-	mov temp+2, x+2
-	mov temp+3, x+3
+	mov temp+2, #0;x+2
+	mov temp+3, #0;x+3
+	
+	mov x+0, #0
+	mov x+2, #0
+	mov x+3, #0 ;only temp stored in x+1 is relevant? 
 	;setb EA
 	
 ret		   

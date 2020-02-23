@@ -502,8 +502,8 @@ InitADC0:
       lcall LCD_4BIT
 
 	  ;THE BELOW VALUES ARE IN   H E X 
-  	  mov Soak_temp, 	#0x8c ; Soak Temp 140
-      mov Soak_temp+1, 	#0x00
+  	  mov Soak_temp, 	#0x00 ; Soak Temp 140
+      mov Soak_temp+1, 	#0x37
       mov Soak_time, 	#0x3c ; Soak Time 60
       mov Reflow_temp, 	#0xE6 ; Reflow Temp 230
       mov Reflow_temp+1,#0x00
@@ -542,6 +542,8 @@ start:
     
     mov BCD_counter+0, #0
     mov BCD_counter+1, #0
+    clr mf
+    
     
     
 ;---------------------------------------
@@ -551,7 +553,7 @@ state1:
 	jnb PB6, done_jump
 	
 state1_1:
-	ljmp system_terminate ;check if pre-soak takes too long 
+	;ljmp system_terminate ;check if pre-soak takes too long 
 	
 cont2_state1:
 	;display time and temp
@@ -563,19 +565,21 @@ cont2_state1:
 	Set_Cursor(1,12)
     lcall LCD_3BCD_4temp
 
+	Set_cursor(2, 12)
+	Display_bcd(x+1)
+	
     ;compare temp
-    clr mf
-    mov y+0, Soak_temp+0
-    mov y+1, #0
+    mov y+0, #0xB0    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
+    mov y+1, #0x36
     mov y+2, #0
     mov y+3, #0
     lcall x_gt_y
     jnb mf, state1  ;if current temp > soak_temp, mf = 1, if mf = 1, then go to state 2
     clr mf 
 	
-    sjmp initialize_state2
+    sjmp state1  ;should be initialize_state2 but for debugging purposes....
 
-
+	
 done_jump:
 	ljmp you_is_done2
 
@@ -587,6 +591,7 @@ initialize_state2:
     Send_Constant_String(#OvenDisplay2)
 	Set_Cursor(2,4)
     Send_Constant_String(#SK)
+    clr mf
     
 state2:
 	lcall ADC_to_PB
@@ -645,8 +650,8 @@ state3_1:
     lcall LCD_3BCD_4temp
     
     ;compare temp
-    mov y+0, Reflow_temp
-    mov y+1, #0
+    mov y+0, #0xD8  ;manually setting. should be Reflow_temp
+    mov y+1, #0x59
     mov y+2, #0
     mov y+3, #0
     lcall x_gt_y
@@ -716,8 +721,8 @@ state_5:
     lcall LCD_3BCD_4temp
     
     ;compare temp
-    mov y+0, #50
-    mov y+1, #0
+    mov y+0, #0x88  ;hex 1388 = 5000 or 50 degrees 
+    mov y+1, #0x13
     mov y+2, #0
     mov y+3, #0
     lcall x_gt_y
@@ -764,43 +769,48 @@ wait_restart:
 	ljmp defaultMessageDisplay
 ;--------------------------------------
 twenty_percent:
+	
     lcall read_temperature
-    mov y, Soak_Temp
+   	mov y+0, #0xB0    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
+    mov y+1, #0x36
+    mov y+2, #0
+    mov y+3, #0
     lcall x_gt_y
-    mov a, mf
-    clr mf
-    cjne a, #1, go_back
-    sjmp turn_off
-
+    jb mf, turn_off ;if mf = 1, or current temp > goal temp, turn off
+    ljmp go_back	;else return
+	clr mf
 twenty_percent2:
     lcall read_temperature
-    mov x, bcd
-    mov y, Soak_Temp
+    mov y+0, #0xB0    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
+    mov y+1, #0x36
+    mov y+2, #0
+    mov y+3, #0
     lcall x_lt_y
-    mov a, mf
-    clr mf
-    cjne a, #1, go_back
-    sjmp turn_on
+    jb mf, turn_on ;if mf = 1, or current temp > goal temp, turn off
+    ljmp go_back	;else return
+	clr mf
 
 twenty_percent3:
     lcall read_temperature
-    mov x, bcd
-    mov y, Reflow_Temp
+    mov y+0, #0xD8  ;manually setting. should be Reflow_temp
+    mov y+1, #0x59
+    mov y+2, #0
+    mov y+3, #0
     lcall x_gt_y
-    mov a, mf
-    clr mf
-    cjne a, #1, go_back1
-    sjmp turn_off
+    jb mf, turn_off ;if mf = 1, or current temp > goal temp, turn off
+    ljmp go_back	;else return
+	clr mf
 
 twenty_percent4:
     lcall read_temperature
-    mov x, bcd
-    mov y, Reflow_Temp
+    mov y+0, #0xD8  ;manually setting. should be Reflow_temp
+    mov y+1, #0x59
+    mov y+2, #0
+    mov y+3, #0
     lcall x_lt_y
-    mov a, mf
-    clr mf
-    cjne a, #1, go_back1
-    ljmp turn_on
+    jb mf, turn_on ;if mf = 1, or current temp > goal temp, turn off
+    ljmp go_back	;else return
+	clr mf
 
 go_back1:
     ret
@@ -861,12 +871,13 @@ setSoak:
     Send_Constant_String(#SoakMessage)
 	Set_Cursor(2,1)
     Send_Constant_String(#TP)
-    mov x+0, Soak_temp+0
-    mov x+1, #0
+    mov x+0, #0
+    mov x+1, Soak_temp+1
     mov x+2, #0
     mov x+3, #0
     lcall hex2bcd
-    lcall LCD_3BCD
+    Display_bcd(bcd+1)
+    ;lcall LCD_3BCD
 	WriteData(#0b11011111)
     Send_Constant_String(#Celsius)
     WriteData(#' ')
@@ -1033,14 +1044,13 @@ wait_activate:
 
   INCSoakTime:
       mov a, Soak_time
-      cjne a, #0x90, contINCSoakTime
+      cjne a, #90, contINCSoakTime
       
       Wait_Milli_Seconds(#200)
       ljmp setSoak
   
   contINCSoakTime:
-      add a, #0x05
-      da a
+      add a, #5
       mov Soak_time, a
       Wait_Milli_Seconds(#200)
       ljmp setSoak
@@ -1049,14 +1059,13 @@ wait_activate:
 
   DECSoakTime:
       mov a, Soak_time
-      cjne a, #0x60, contDECSoakTime
+      cjne a, #60, contDECSoakTime
 
       Wait_Milli_Seconds(#200)
       ljmp setSoak
       
   contDECSoakTime:
-      add a, #0x95
-      da a
+      add a, #251
       mov Soak_time, a
       Wait_Milli_Seconds(#200)
       ljmp setSoak
@@ -1066,17 +1075,17 @@ wait_activate:
 
   INCSoakTemp:
       mov a, Soak_temp
-      cjne a, #0x95, checkSoakTempMax
+      cjne a, #95, checkSoakTempMax
       
   	  mov a, Soak_temp+1
-  	  cjne a, #0x01, contINCSoakTempReg
+  	  cjne a, #01, contINCSoakTempReg
       
       mov a, #0x00
       mov Soak_temp, a
       
   	  mov a, Soak_temp+1
-  	  cjne a, #0x01, stopINCSoakTemp
-  	  add a, #0x01
+  	  cjne a, #01, stopINCSoakTemp
+  	  add a, #01
   	  mov Soak_temp+1, a
   	  
   	  Wait_Milli_Seconds(#200)
@@ -1084,7 +1093,7 @@ wait_activate:
   	  
   checkSoakTempMax:
   	  mov a, Soak_temp+1
-  	  cjne a, #0x02, contINCSoakTempReg
+  	  cjne a, #02, contINCSoakTempReg
   	  
   stopINCSoakTemp:
   	  Wait_Milli_Seconds(#200)
@@ -1092,8 +1101,7 @@ wait_activate:
   	  
   contINCSoakTempReg:
   	  mov a, Soak_temp
-      add a, #0x05
-      da a
+      add a, #5
       mov Soak_temp, a
       Wait_Milli_Seconds(#200)
       ljmp setSoak
@@ -1102,22 +1110,21 @@ wait_activate:
 
   DECSoakTemp:
       mov a, Soak_temp+1
-      cjne a, #0x01, checkSoakTempD
+      cjne a, #01, checkSoakTempD
   
   	  mov a, Soak_temp
-  	  cjne a, #0x40, contDECSoakTemp
+  	  cjne a, #40, contDECSoakTemp
   	  
   	  Wait_Milli_Seconds(#200)
   	  ljmp setSoak
   	  
   checkSoakTempD:
-  	  subb a, #0x01
+  	  subb a, #01
   	  mov Soak_temp+1, a
   	  mov a, Soak_temp
   	  
   contDECSoakTemp:
-      add a, #0x95
-      da a
+      add a, #251
       mov Soak_temp, a
       Wait_Milli_Seconds(#200)
       ljmp setSoak
@@ -1125,56 +1132,52 @@ wait_activate:
   ;-------------------------
   INCReflowTime:
       mov a, Reflow_time
-      cjne a, #0x60, contINCReflowTime
+      cjne a, #60, contINCReflowTime
       
       Wait_Milli_Seconds(#200)
       ljmp setReflow
   
   contINCReflowTime:
-      add a, #0x05
-      da a
+      add a, #05
       mov Reflow_time, a  
       Wait_Milli_Seconds(#200)
       ljmp setReflow
 
   DECReflowTime:
       mov a, Reflow_time
-      cjne a, #0x30, contDECReflowTime
+      cjne a, #30, contDECReflowTime
 
       Wait_Milli_Seconds(#200)
       ljmp setReflow
       
   contDECReflowTime:
-      add a, #0x95
-      da a
+      add a, #251
       mov Reflow_time, a
       Wait_Milli_Seconds(#200)
       ljmp setReflow
 
   INCReflowTemp:
       mov a, Reflow_temp
-      cjne a, #0x40, contINCReflowTemp
+      cjne a, #40, contINCReflowTemp
       
       Wait_Milli_Seconds(#200)
       ljmp setReflow
       
   contINCReflowTemp:
-      add a, #0x05
-      da a
+      add a, #05
       mov Reflow_temp, a
       Wait_Milli_Seconds(#200)
       ljmp setReflow
 
   DECReflowTemp:
       mov a, Reflow_temp
-      cjne a, #0x30, contDECReflowTemp
+      cjne a, #30, contDECReflowTemp
       
       Wait_Milli_Seconds(#200)
       ljmp setReflow
   
   contDECReflowTemp:
-      add a, #0x95
-      da a
+      add a, #251
       mov Reflow_temp, a
       Wait_Milli_Seconds(#200)
       ljmp setReflow
@@ -1182,4 +1185,4 @@ wait_activate:
 
 
 
-      END   
+      END
