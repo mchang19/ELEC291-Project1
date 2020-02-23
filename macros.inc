@@ -130,7 +130,7 @@ accumulate_loop:
 	lcall mul32
 	Load_y(((1<<12)-1)) ; 2^12-1
 	lcall div32
-	Load_y(120)
+	Load_y(203)
 	lcall mul32
 	Load_y(100)
 	lcall div32
