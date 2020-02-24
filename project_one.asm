@@ -117,9 +117,9 @@ $MOD9351
   ;----------------;
   ;button variables;
   ;----------------;
-  ;BLUE_LED 			equ P0.0
+  BLUE_LED 			equ P0.0
   RED_LED  			equ P0.1
-  ORAGN_LED 		equ P0.2
+  ORANGE_LED 		equ P0.2
   YELLOW_LED 		equ P0.3
   SOUND_LONGGREEN 	equ P0.4
 
@@ -143,6 +143,7 @@ $MOD9351
   $include(LCD_4bit_LPC9351.inc) ; A library of LCD related functions and utility macros
   $include(math32.inc)
   $include(macros.inc)
+  $include(LEDchecker.inc)
   $LIST
 
   ;                    	1234567890123456    <- This helps determine the location of the counter
@@ -272,7 +273,7 @@ Inc_Done:
 	mov a, BCD_counter
 	jnz Timer1_ISR_done
 	inc BCD_counter+1
-
+    lcall LEDflickerer
 
 Timer1_ISR_done:
 	pop psw
