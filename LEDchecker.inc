@@ -14,22 +14,20 @@ LEDs3:
     cjne a, #3, LEDs4
     setb YELLOW_LED
     setb ORANGE_LED
-    cpl RED_LED
+    cpl BLUE_LED
     ljmp finishLED
 
 LEDs4:
     cjne a, #4, LEDs5
-    setb YELLOW_LED
-    setb ORANGE_LED
-    setb RED_LED
+    cpl YELLOW_LED
+    cpl ORANGE_LED
     cpl BLUE_LED
     ljmp finishLED
 
 LEDs5:
-    cjne a, #4, LEDs5
+    cjne a, #0, finishLED
     setb YELLOW_LED
     setb ORANGE_LED
-    setb RED_LED
     setb BLUE_LED
 
 finishLED:

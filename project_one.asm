@@ -195,9 +195,8 @@ $MOD9351
     ; Set autoreload value
     mov TIMER0_RELOAD_H, #high(TIMER0_RELOAD)
     mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
-    ; timer 0 currently not used for anything
-      ;  clr ET0  ; Enable timer 0 interrupt
-       ; setb TR0  ; Start timer 0
+    clr ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
     ret
 
   ;---------------------------------;
@@ -206,11 +205,10 @@ $MOD9351
   ; 2048 Hz square wave at pin P3.7 ;
   ;---------------------------------;
   Timer0_ISR:  
-    cpl SOUND_OUT ; Connect speaker to P3.7!
-    jnb error_flag, notOn
-      reti
-  notOn:
-    clr SOUND_OUT
+    jb error_flag, OnAlarm
+    reti
+  OnAlarm:
+    cpl SOUND_OUT
     reti
   ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -526,7 +524,7 @@ InitADC0:
       Wait_Milli_Seconds(#50)
       WriteCommand(#1)
       Wait_Milli_Seconds(#50)
-      
+      lcall Timer0_Init
       lcall Timer1_Init
       setb EA
       
@@ -887,6 +885,7 @@ system_terminate:
 	jnb mf, cont_state1
 	clr mf
 	
+	setb error_flag
 	ljmp you_is_done2
 	
 cont_state1:
