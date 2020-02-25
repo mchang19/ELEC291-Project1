@@ -45,6 +45,8 @@
 ;
 
 $NOLIST
+$include(math32.inc)
+$include(macros.inc)
 $MOD9351
 $LIST
 
@@ -105,8 +107,8 @@ org 0x0000 ; Reset vector
 ;org 0x0013 ; External interrupt 1 vector (not used in this code)
 ;	reti
 
-org 0x001B ; Timer/Counter 1 overflow interrupt vector
-	ljmp Timer1_ISR
+;org 0x001B ; Timer/Counter 1 overflow interrupt vector
+;	ljmp Timer1_ISR
 
 ;org 0x0023 ; Serial port receive/transmit interrupt vector (not used in this code)
 ;	reti
@@ -126,56 +128,6 @@ LCD_D7 equ P1.3
 $NOLIST
 $include(LCD_4bit_LPC9351.inc) ; A library of LCD related functions and utility macros
 $LIST
-
-;---------------------------------;
-; Routine to initialize the ISR   ;
-; for timer 1                     ;
-;---------------------------------;
-Timer1_Init:
-	mov a, TMOD
-	anl a, #0x0f ; Clear the bits for timer 1
-	orl a, #0x10 ; Configure timer 1 as 16-timer
-	mov TMOD, a
-	mov TH1, #high(TIMER1_RELOAD)
-	mov TL1, #low(TIMER1_RELOAD)
-	; Enable the timer and interrupts
-    setb ET1  ; Enable timer 1 interrupt
-    setb TR1  ; Start timer 1
-	ret
-
-;---------------------------------;
-; ISR for timer 1                 ;
-;---------------------------------;
-Timer1_ISR:
-	mov TH1, #high(TIMER1_RELOAD)
-	mov TL1, #low(TIMER1_RELOAD)
-	
-	; The two registers used in the ISR must be saved in the stack
-	push acc
-	push psw
-	
-	; Increment the 8-bit 5-mili-second counter
-	inc Count5ms
-
-Inc_Done:
-	; Check if half second has passed
-	mov a, Count5ms
-	cjne a, #200, Timer1_ISR_done ; Warning: this instruction changes the carry flag!
-	
-	; 1000 milliseconds have passed.  Set a flag so the main program knows
-	setb seconds_flag ; Let the main program know half second had passed
-	; Reset to zero the 5-milli-seconds counter, it is a 8-bit variable
-	mov Count5ms, #0
-	; Increment seconds
-	inc seconds
-	mov a, seconds
-	cjne a, #5, Timer1_ISR_done
-	mov seconds, #0
-	
-Timer1_ISR_done:
-	pop psw
-	pop acc
-	reti
 
 ;---------------------------------;
 ; Routine to initialize the CCU.  ;
@@ -504,7 +456,6 @@ Play_Sound_Using_Index:
 
 T2S_FSM:
 	mov a, T2S_FSM_state
-	clr fsm_done
 ;-----------------------------------------------------13---------------------------------------------	
 T2S_FSM_State13:
     cjne a, #13, T2S_FSM_State14
@@ -691,11 +642,9 @@ Play_By_Index:
 index_loop:
 	ljmp index_loop
 ;---------------------------------;
-; Main program. Includes hardware ;
-; initialization and 'forever'    ;
-; loop.                           ;
+; Hardware initialization.                          
 ;---------------------------------;
-MainProgram:
+Initialize:
     mov SP, #0x7F
     
     lcall Ports_Init ; Default all pins as bidirectional I/O. See Table 42.
@@ -717,39 +666,37 @@ MainProgram:
 	mov degrees, #0
 	mov seconds, #0
 	
+	ret
+
+;-----------------------------------;
+; Forever loop to call temperature  ;
+; Can lcall check_reflow_start	    ;
+;
+; For states, can mov a, #[index]   ;
+;				  lcall Play_Sound..;
+;				  jb TMOD20, $		;
+;-----------------------------------;
+check_reflow_start:
+	jb T2S_FSM_Start, forever_loop
+	jnb T2S_FSM_Start, $ ; Wait until start flag is on	
 forever_loop:
 	lcall read_temperature ; Reads temperature
 	mov a, x
-	mov degrees, a
-	setb T2S_FSM_Start
+	mov degrees, a ; Move temperature reading to degrees variable
+	mov a, #1
+	mov T2S_FSM_Start, a ; Make sure that start flag is on
+	clr fsm_done ; Make sure fsm_done flag cleared
+	mov a, #13 ; Put number of first state into a
 	lcall T2S_FSM ; Run the state machine that plays minutes:seconds
-	jnb fsm_done, forever_loop
-
-check_reflow_start:
-	; check if the reflow oven process has begun
-	
-	jb reflow_start_flag, check_reflow_stop
-	jnb reflow_start_flag, $
-	setb TR1 ; Start Timer 1, ISR increments in 5 second intervals
-	sjmp check_DONE
 	
 check_reflow_stop:
-	
-	jb reflow_stop_flag, check_terminate
-	jnb reflow_stop_flag, $
-	clr TR1 ; Stop timer 1
-	setb T2S_FSM_Start ; Plays current temperature
-	sjmp check_DONE
-	
-check_terminate:
-	jb terminate_flag, check_DONE
-	jnb terminate_flag, $
+	; flag to check !== 1?
+	jnb fsm_done, forever_loop ; If reflow_stop_flag == 1, stop timer and reset; if not, keep reading temp
 	clr TR1 ; Stop timer 1
 	mov seconds, #0
-	setb seconds_flag;
 	sjmp check_DONE
 	
 check_DONE:
-	ljmp forever_loop
+	ljmp check_reflow_start
 
 END
