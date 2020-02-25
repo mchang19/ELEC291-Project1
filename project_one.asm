@@ -187,36 +187,32 @@ $MOD9351
   InitialMessage: db '\r\nDisplaying temperature on puTTy!  Input pin is P2.0 \r\n', 0     
 
 
-  ;---------------------------------;
-  ; Routine to initialize the ISR   ;
-  ; for timer 0                     ;
-  ;---------------------------------;
-  Timer0_Init:
-    mov a, TMOD
-    anl a, #0xf0 ; Clear the bits for timer 0
-    orl a, #0x01 ; Configure timer 0 as 16-timer
-    mov TMOD, a
-    mov TH0, #high(TIMER0_RELOAD)
-    mov TL0, #low(TIMER0_RELOAD)
-    ; Set autoreload value
-    mov TIMER0_RELOAD_H, #high(TIMER0_RELOAD)
-    mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
-    clr ET0  ; Enable timer 0 interrupt
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
     setb TR0  ; Start timer 0
-    ;setb SOUND_OUT
-    ret
+	ret
 
-  ;---------------------------------;
-  ; ISR for timer 0.  Set to execute;
-  ; every 1/4096Hz to generate a    ;
-  ; 2048 Hz square wave at pin P3.7 ;
-  ;---------------------------------;
-  Timer0_ISR:  
-    jb error_flag, OnAlarm
-    reti
-  OnAlarm:
-    ;cpl SOUND_OUT
-    reti
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P2.2 ;
+;---------------------------------;
+Timer0_ISR:
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	cpl SOUND_OUT ; Connect speaker to this pin
+	reti
   ;---------------------------------;
 ; Routine to initialize the ISR   ;
 ; for timer 1                   ;
@@ -271,6 +267,10 @@ Inc_Done:
 	
 	setb one_seconds_flag
 	lcall LEDflickerer
+	jnb error_flag, continueNOALARM
+	cpl TR0
+    
+continueNOALARM:
 	
 	;mov a, five_seconds_count
 	;cjne a, #5, cont_inc_five
@@ -285,11 +285,7 @@ Inc_Done:
 
 	lcall read_temperature
 	lcall shiftBCDdown
-
 	lcall SendTemp
-	Set_cursor(2, 16)
-	Display_char(#'C')
-	clr mf
 
 	inc BCD_counter+0
 	mov a, BCD_counter
@@ -593,10 +589,6 @@ start:
     mov a, #1
     mov state, a
     clr YELLOW_LED
-    
-
-	
-    clr mf
 
     
 ;---------------------------------------
@@ -618,10 +610,9 @@ cont2_state1:
 	lcall shiftBCDdown
 	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
-    lcall LCD_3BCD
-    
-cont3_state1:    
-
+    lcall LCD_3BCD  
+	lcall read_temperature
+	lcall shiftBCDdown
 	lcall bcd2hex
     clr mf
     mov a, Soak_temp-2
@@ -641,10 +632,10 @@ done_jump:
 
 initialize_state2:
 	;audio to indicate soak time
-	mov a, #30
-	lcall Play_Sound_Using_Index
-	mov a, #34
-	lcall Play_Sound_Using_Index
+	;mov a, #30
+	;lcall Play_Sound_Using_Index
+	;mov a, #34
+	;lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -654,7 +645,6 @@ initialize_state2:
     Send_Constant_String(#SK)
     mov a, #2
     mov state, a
-    clr mf
     
 state2:
 	lcall ADC_to_PB
@@ -668,7 +658,6 @@ state2_1:
 	_convert_to_bcd(Soak_time)	
     lcall LCD_3BCD
 	lcall read_temperature
-	lcall hex2bcd
 	lcall shiftBCDdown
 	Set_Cursor(1,12)
     lcall LCD_3BCD
@@ -687,10 +676,10 @@ jumpy:
 
 initialize_state3:
 	;audio to indicate soak time
-	mov a, #30
-	lcall Play_Sound_Using_Index
-	mov a, #35
-	lcall Play_Sound_Using_Index
+	;mov a, #30
+	;lcall Play_Sound_Using_Index
+	;mov a, #35
+	;lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -706,41 +695,42 @@ initialize_state3:
 state3:
 	lcall ADC_to_PB
 	jnb PB6, done_jump2 ;did user press abort?
-	;lcall LEDflickerer
 	sjmp state3_1
 
 done_jump2:
 	ljmp you_is_done2
 	
 state3_1:
-	;display time and temp
-	Set_Cursor(1,3)			
-    _convert_time
-    lcall LCD_3BCD
-	lcall read_temperature
-	lcall hex2bcd
-	lcall shiftBCDdown
-	Set_Cursor(1,12)
-    lcall LCD_3BCD
-    lcall bcd2hex
-    clr mf
-    mov a, Reflow_temp
-    ;compare temp
-    mov y+0, a  ;manually setting. should be Reflow_temp
-    mov y+1, #0
-    mov y+2, #0
-    mov y+3, #0
-    lcall x_gt_y
-    jnb mf, state3
-    clr mf 
+		;display time and temp
+		Set_Cursor(1,3)			
+   		_convert_time
+    	lcall LCD_3BCD
+    
+		lcall read_temperature
+		lcall shiftBCDdown
+		Wait_Milli_Seconds(#250)
+		Set_Cursor(1,12)
+	    lcall LCD_3BCD  
+		lcall read_temperature
+		lcall shiftBCDdown
+		lcall bcd2hex
+    	clr mf
+    	mov a, Reflow_temp   ;should be reflow temp but tryna test something out
+    	mov y+0, a
+    	mov y+1, #0
+    	mov y+2, #0
+    	mov y+3, #0
+    	lcall x_gt_y
+    	jnb mf, state3  
+    	clr mf 
 
     
 initialize_state4:
 	;audio to indicate soak time
-	mov a, #30
-	lcall Play_Sound_Using_Index
-	mov a, #36
-	lcall Play_Sound_Using_Index
+	;mov a, #30
+	;lcall Play_Sound_Using_Index
+	;mov a, #36
+	;lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -787,10 +777,10 @@ state4_1:
 
 initialize_state5:
 	;audio to indicate soak time
-	mov a, #30
-	lcall Play_Sound_Using_Index
-	mov a, #37
-	lcall Play_Sound_Using_Index
+	;mov a, #30
+	;lcall Play_Sound_Using_Index
+	;mov a, #37
+	;lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -810,10 +800,12 @@ state_5:
     _convert_time
     lcall LCD_3BCD
 	lcall read_temperature
-	lcall hex2bcd
 	lcall shiftBCDdown
+	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
     lcall LCD_3BCD
+    lcall read_temperature
+    lcall shiftBCDdown
     lcall bcd2hex
     clr mf
     mov a, #50
@@ -868,9 +860,9 @@ wait_restart:
 twenty_percent:
 	
     lcall read_temperature
-    lcall hex2bcd
     lcall shiftBCDdown
     lcall bcd2hex
+    clr mf
     mov a, Soak_temp
    	mov y+0, a    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
     mov y+1, #0
@@ -882,9 +874,9 @@ twenty_percent:
 	clr mf
 twenty_percent2:
     lcall read_temperature
-    lcall hex2bcd
     lcall shiftBCDdown
     lcall bcd2hex
+    clr mf
     mov a, Soak_temp
     mov y+0, a    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
     mov y+1, #0
@@ -898,10 +890,10 @@ twenty_percent2:
 twenty_percent3:
 	
     lcall read_temperature
-    lcall hex2bcd
     lcall shiftBCDdown
     lcall bcd2hex
-    mov a, Reflow_temp-2
+    clr mf
+    mov a, Reflow_temp
    	mov y+0, a    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
     mov y+1, #0
     mov y+2, #0
@@ -912,10 +904,10 @@ twenty_percent3:
 	clr mf
 twenty_percent4:
     lcall read_temperature
-    lcall hex2bcd
     lcall shiftBCDdown
     lcall bcd2hex
-    mov a, Reflow_temp+2
+    clr mf
+    mov a, Reflow_temp
     mov y+0, a    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
     mov y+1, #0
     mov y+2, #0
@@ -1258,7 +1250,7 @@ INCSoakTemp:
 
   INCReflowTemp:
       mov a, Reflow_temp
-      cjne a, #0xF0, contINCReflowTemp ; 0xF0 = 240 in decimal
+      cjne a, #0xE6, contINCReflowTemp ; 0xE6 = 230 in decimal
       
       Wait_Milli_Seconds(#200)
       ljmp setReflow
@@ -1271,7 +1263,7 @@ INCSoakTemp:
 
   DECReflowTemp:
       mov a, Reflow_temp
-      cjne a, #0xE6, contDECReflowTemp ; 0xE6 = 230 in decimal
+      cjne a, #0xDC, contDECReflowTemp ; 0xDC = 220 in decimal
       
       Wait_Milli_Seconds(#200)
       ljmp setReflow

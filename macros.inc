@@ -1,33 +1,11 @@
-SendTemp:
-	mov dptr, #HexAscii 
-	
-	mov a, bcd+1
-	swap a
-	anl a, #0xf
-	movc a, @a+dptr
-	lcall putchar
-	mov a, bcd+1
-	anl a, #0xf
-	movc a, @a+dptr
-	lcall putchar
 
-	mov a, bcd+0
-	swap a
-	anl a, #0xf
-	movc a, @a+dptr
-	lcall putchar
-	mov a, bcd+0
-	anl a, #0xf
-	movc a, @a+dptr
-	lcall putchar
-	
-	mov a, #'\r'
-	lcall putchar
-	mov a, #'\n'
-	lcall putchar	
-	ret
-	
-	
+		
+  ; Send a character using the serial port
+putchar:
+    jnb TI, putchar
+    clr TI
+    mov SBUF, a
+    ret
 ;--------------------------------------------
 _convert_time mac
 	mov x+0, BCD_counter+0
@@ -58,53 +36,8 @@ read_temp mac
 endmac
 
 
-;-----------------------------------
-
-	
-readADC:
-	mov a, AD0DAT3
-	mov thermo_temp, a
-	;theoretically we would also read from the LM335 lmaooOOOO
-	mov a, AD0DAT1
-	mov room_temp, a
-	
-	ret 
-
-calcTemp:
-	mov x+0, thermo_temp
-	mov x+1, #0
-	mov x+2, #0
-	mov x+3, #0
-	
-	mov y+0, room_temp
-	mov y+1, #0
-	mov y+2, #0
-	mov y+3, #0
-	
-
-	lcall sub32
-	Load_y(330)
-	lcall mul32 
-	Load_y(255)
-	lcall div32
-	;Load_y(120)
-	;lcall div32
-	Load_y(273)
-	lcall sub32
-
-	
-	mov temp+0, x+0
-	mov temp+1, x+1
-	mov temp+2, x+2
-	mov temp+3, x+3
-	
-	ret
-
-
-;---------------------------------------
 ;------------Retreive temp readings from adc---------------------;
 read_temperature:
-	;clr EA
 	; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
     mov x+0, AD0DAT3
@@ -136,16 +69,55 @@ accumulate_loop:
 	Load_y(2200)
 	lcall add32
 	
-	mov temp, x+0			;store result of thermocouple in temp
+	mov temp+0, x+0			;store result of thermocouple in temp
 	mov temp+1, x+1
-	mov temp+2, #0;x+2
-	mov temp+3, #0;x+3
-	
-	mov x+0, #0
-	mov x+2, #0
-	mov x+3, #0 ;only temp stored in x+1 is relevant? 
-	;setb EA
-	
-ret		   
+	mov temp+2, x+2
+	mov temp+3, x+3
+	lcall hex2bcd
+ret	
+
+Send_BCD2 mac
+	push ar0
+	mov r0, %0
+	lcall ?Send_BCD2
+	pop ar0
+endmac
+
+?Send_BCD2:
+	push acc
+	; write least significant digit
+	mov a, r0
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	pop acc
+	ret
+
+;---------------------------------;
+; Send a BCD number to PuTTY      ;
+;---------------------------------;
+Send_BCD mac
+	push ar0
+	mov r0, %0
+	lcall ?Send_BCD
+	pop ar0
+endmac
+
+?Send_BCD:
+	push acc
+	; Write most significant digit
+	mov a, r0
+	swap a
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	; write least significant digit
+	mov a, r0
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	pop acc
+	ret
+
 
 END
