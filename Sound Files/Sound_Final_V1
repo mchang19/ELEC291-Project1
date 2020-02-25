@@ -673,8 +673,14 @@ Initialize:
 ;-----------------------------------;
 check_state:
 	mov a, state
-	jnz temperature_loop ; if state is not 0 (ie. reflow has started), start speaker
+	jnz temperature_check ; if state is not 0 (ie. reflow has started), start speaker
 	sjmp check_state ; checks until state is not 0
+temperature_check:
+	mov a, five_seconds_count
+	mov b, #5
+	div ab ; remainder stored in b
+	mov a, b
+	jnz check_state
 temperature_loop:
 	lcall read_temperature ; Reads temperature
 	mov a, x
