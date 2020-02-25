@@ -78,6 +78,34 @@ $include(math32.inc)
 $include(macros.inc)
 $LIST
 
+sendTemp:
+	Send_BCD2(bcd+1)
+	Send_BCD(bcd)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
+ret
+
+HexAscii: db '0123456789ABCDEF'
+
+putchar:
+	jbc	TI,putchar_L1
+	sjmp putchar
+putchar_L1:
+	mov	SBUF,a
+	ret
+	
+SendString:
+    clr a
+    movc a, @a+dptr
+    jz SendString_L1
+    lcall putchar
+    inc dptr
+    sjmp SendString  
+SendString_L1:
+	ret
+
 Wait10us:
     mov R0, #18
     djnz R0, $ ; 2 machine cycles-> 2*0.27126us*18=10us
@@ -92,14 +120,16 @@ displayTemp:
     WriteData(#0b11011111)
     WriteData(#'C')
     Wait_Milli_Seconds(#20)
-
+    clr mf
+	lcall sendTemp
+	clr mf
     lcall bcd2hex
     clr mf
-    Load_y(Soak_temp)
-    ;mov y+0, Soak_temp    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
-    ;mov y+1, #0
-    ;mov y+2, #0
-    ;mov y+3, #0
+    mov a, Soak_temp
+    mov y+0, a    ;hex for 140 degrees (using 2 bits) supposed to be Soak_temp 
+    mov y+1, #0
+    mov y+2, #0
+    mov y+3, #0
     lcall x_gt_y
     jnb mf, showLOW  ;if current temp > soak_temp, mf = 1, if mf = 1, then go to state 2
 
@@ -140,6 +170,16 @@ shiftBCDdown:
 	mov bcd+4, #0
 ret
 
+InitSerialPort:
+	mov	BRGCON,#0x00
+	mov	BRGR1,#high(BRVAL)
+	mov	BRGR0,#low(BRVAL)
+	mov	BRGCON,#0x03 ; Turn-on the baud rate generator
+	mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
+	mov	P1M1,#0x00 ; Enable pins RxD and TXD
+	mov	P1M2,#0x00 ; Enable pins RxD and TXD
+	ret
+
 InitADC0:
 	; ADC0_0 is connected to P1.7
 	; ADC0_1 is connected to P0.0
@@ -174,13 +214,17 @@ main:
     mov P2M2, #00H
     mov P3M1, #00H
     mov P3M2, #00H
+    lcall InitSerialPort
     lcall InitADC0
     lcall LCD_4BIT
     mov Soak_temp, #140
     
 forever:
     lcall displayTemp
-    Wait_Milli_Seconds(#60)
+    Wait_Milli_Seconds(#250)
+    Wait_Milli_Seconds(#250)
+    Wait_Milli_Seconds(#250)
+    Wait_Milli_Seconds(#250)
     ljmp forever
 
 END
