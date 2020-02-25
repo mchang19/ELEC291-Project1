@@ -78,23 +78,22 @@ READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
 dseg at 30H
 w:             ds 3 ; 24-bit play counter.  Decremented in CCU ISR.
 ;minutes:       ds 1
-seconds:       ds 1
+;seconds:       ds 1
 degrees:	   ds 1
 T2S_FSM_state: ds 1
 Count5ms:      ds 1
 
 BSEG
 T2S_FSM_start: dbit 1
-seconds_flag:  dbit 1
+;seconds_flag:  dbit 1
 fsm_done:      dbit 1 ;flag used to detect whether fsm has done
 
 ; Connect pushbuttons to this pins to, start, stop, or clear the stop watch
-START equ P2.6
-STOP  equ P3.0
-CLEAR equ P0.3
+;START equ P2.6
+;STOP  equ P3.0
+;CLEAR equ P0.3
 
 cseg
-
 org 0x0000 ; Reset vector
     ljmp Initialize
 
@@ -603,7 +602,7 @@ remains_gt_20:
 	jz T2S_FSM_State10_Done ;for preventing to playing like forty zero
 	lcall Play_Sound_Using_Index
 T2S_FSM_State10_Done:
-	mov T2s_FSM_State, #2
+	mov T2S_FSM_State, #2
 	ret
 ;---------------------------------------------------------11-------------------------------------------------
 T2S_FSM_State11: ; play the word 'degrees'
@@ -652,9 +651,7 @@ Initialize:
 	lcall InitDAC1 ; Call after 'Ports_Init'
 	lcall CCU_Init
 	lcall Init_SPI
-	lcall Timer1_Init
 	
-	clr TR1 ; Stop timer 1
 	clr TMOD20 ; Stop CCU timer
 	setb EA ; Enable global interrupts.
 	clr fsm_done
@@ -664,7 +661,6 @@ Initialize:
 	clr T2S_FSM_Start
 	mov T2S_FSM_state, #13
 	mov degrees, #0
-	mov seconds, #0
 	
 	ret
 
@@ -674,12 +670,12 @@ Initialize:
 ;
 ; For states, can mov a, #[index]   ;
 ;				  lcall Play_Sound..;
-;				  jb TMOD20, $		;
 ;-----------------------------------;
-check_reflow_start:
-	jb T2S_FSM_Start, forever_loop
-	jnb T2S_FSM_Start, $ ; Wait until start flag is on	
-forever_loop:
+check_state:
+	mov a, state
+	jnz temperature_loop ; if state is not 0 (ie. reflow has started), start speaker
+	sjmp check_state ; checks until state is not 0
+temperature_loop:
 	lcall read_temperature ; Reads temperature
 	mov a, x
 	mov degrees, a ; Move temperature reading to degrees variable
@@ -688,15 +684,6 @@ forever_loop:
 	clr fsm_done ; Make sure fsm_done flag cleared
 	mov a, #13 ; Put number of first state into a
 	lcall T2S_FSM ; Run the state machine that plays minutes:seconds
-	
-check_reflow_stop:
-	; flag to check !== 1?
-	jnb fsm_done, forever_loop ; If reflow_stop_flag == 1, stop timer and reset; if not, keep reading temp
-	clr TR1 ; Stop timer 1
-	mov seconds, #0
-	sjmp check_DONE
-	
-check_DONE:
-	ljmp check_reflow_start
+	ljmp check_state ; Go back and check state
 
 END
