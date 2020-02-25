@@ -113,6 +113,7 @@ $MOD9351
   PB5:				dbit 1 ;increment mode from continueSoakSetting
   PB6:				dbit 1 ;start button 
   mf:				dbit 1 ;
+  five_seconds_flag:dbit 1
 
   cseg
   ;CE_ADC    EQU  P2.0 
@@ -266,24 +267,28 @@ Inc_Done:
 	mov Count_5ms+1, #0
 	
 	setb one_seconds_flag
-	lcall LEDflickerer
 	jnb error_flag, continueNOALARM
 	cpl TR0
     
 continueNOALARM:
 	
-	;mov a, five_seconds_count
-	;cjne a, #5, cont_inc_five
-	;sjmp cont_Inc_Done
+	mov a, five_seconds_count
+	cjne a, #5, cont_inc_five
+	setb five_seconds_flag
+	;lcall check_state
+	clr a
+	mov five_seconds_count, #0
+		lcall LEDflickerer
+	sjmp cont_Inc_Done
 	
-;cont_inc_five:
-;	mov a, five_seconds_count
-;	inc a
-;	mov five_seconds_count, a
+cont_inc_five:
+	mov a, five_seconds_count
+	inc a
+	mov five_seconds_count, a
 	
-;cont_Inc_Done:
-
+cont_Inc_Done:
 	lcall read_temperature
+	lcall hex2bcd
 	lcall shiftBCDdown
 	lcall SendTemp
 
@@ -812,7 +817,7 @@ state_5:
 	Set_Cursor(1,12)
     lcall LCD_3BCD
     
-    jnb one_seconds_flag, state5 ;if a second has not passed, return to state3
+    jnb one_seconds_flag, state_5 ;if a second has not passed, return to state3
 	clr one_seconds_flag
     lcall read_temperature
     lcall shiftBCDdown
