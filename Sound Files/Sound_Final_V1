@@ -677,7 +677,7 @@ check_state:
 	sjmp check_state ; checks until state is not 0
 temperature_check:
 	mov a, five_seconds_count
-	mov b, #5
+	mov b, #15
 	div ab ; remainder stored in b
 	mov a, b
 	jnz check_state
