@@ -605,12 +605,15 @@ cont2_state1:
 	Set_Cursor(1,3)			
     _convert_time
     lcall LCD_3BCD
-    
+    	
 	lcall read_temperature
 	lcall shiftBCDdown
 	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
-    lcall LCD_3BCD  
+    lcall LCD_3BCD 
+    
+    jnb one_seconds_flag, state1 ;if a second has not passed, return to state3
+	clr one_seconds_flag 
 	lcall read_temperature
 	lcall shiftBCDdown
 	lcall bcd2hex
@@ -711,13 +714,17 @@ state3_1:
 		Wait_Milli_Seconds(#250)
 		Set_Cursor(1,12)
 	    lcall LCD_3BCD  
+	    
+		jnb one_seconds_flag, state3 ;if a second has not passed, return to state3
+		clr one_seconds_flag
+		
 		lcall read_temperature
 		lcall shiftBCDdown
 		lcall bcd2hex
-    	clr mf
-    	mov a, Reflow_temp   ;should be reflow temp but tryna test something out
-    	mov y+0, a
-    	mov y+1, #0
+		clr mf
+		mov a, Reflow_temp
+		mov y+0, a
+		mov y+1, #0
     	mov y+2, #0
     	mov y+3, #0
     	lcall x_gt_y
@@ -804,6 +811,9 @@ state_5:
 	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
     lcall LCD_3BCD
+    
+    jnb one_seconds_flag, state5 ;if a second has not passed, return to state3
+	clr one_seconds_flag
     lcall read_temperature
     lcall shiftBCDdown
     lcall bcd2hex
