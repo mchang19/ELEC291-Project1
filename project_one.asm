@@ -117,11 +117,11 @@ $MOD9351
   ;----------------;
   ;button variables;
   ;----------------;
-  BLUE_LED 			equ P0.0
-  RED_LED  			equ P0.1
+  BLUE_LED 			equ P0.1
+  ;RED_LED  			equ P0.1
   ORANGE_LED 		equ P0.2
   YELLOW_LED 		equ P0.3
-  SOUND_LONGGREEN 	equ P0.4
+  ;SOUND_LONGGREEN 	equ P0.4
 
   LCD_RS equ P0.5
   LCD_RW equ P0.6
@@ -136,7 +136,7 @@ $MOD9351
   ;OP_VOUT				equ P1.4 ;for temp
   OVEN					equ P0.0
   ALARM					equ P2.1
-  SOUND_OUT				EQU P2.7
+  SOUND_OUT				EQU P2.2
 
 
   $NOLIST
@@ -178,7 +178,7 @@ $MOD9351
   User:				db 'USER', 0
   Terminated:		db 'TERMINATED', 0
   ToRestart:		db 'To restart', 0
-
+  InitialMessage: db '\r\nDisplaying temperature on puTTy!  Input pin is P2.0 \r\n', 0     
 
 
   ;---------------------------------;
@@ -263,15 +263,17 @@ Inc_Done:
 	mov Count_5ms+1, #0
 	
 	setb one_seconds_flag
-	lcall read_temperature
-	lcall hex2bcd
-	lcall shiftBCDdown
-	lcall SendTemp
+	lcall LEDflickerer
+	;lcall read_temperature
+	;lcall hex2bcd
+	;lcall shiftBCDdown
+	;lcall SendTemp
+
 	inc BCD_counter+0
 	mov a, BCD_counter
 	jnz Timer1_ISR_done
 	inc BCD_counter+1
-    lcall LEDflickerer
+
 
 Timer1_ISR_done:
 	pop psw
@@ -357,33 +359,23 @@ ADC_to_PB_L0:
   ;---------------;
 
   ; Configure the serial port and baud rate
-  InitSerialPort:
+InitSerialPort:
     mov	BRGCON,#0x00
     mov	BRGR1,#high(BRVAL)
     mov	BRGR0,#low(BRVAL)
     mov	BRGCON,#0x03 ; Turn-on the baud rate generator
     mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
-    mov	P1M1,#0x00 ; Enable pins RxD and TXD
-    mov	P1M2,#0x00 ; Enable pins RxD and TXD
+    
+	mov	P1M1,#0x00 ; Enable pins RxD and TXD
+	mov	P1M2,#0x00 ; Enable pins RxD and TXD
     ret
 
 InitADC0:
-	; ADC0_0 is connected to P1.7
-	; ADC0_1 is connected to P0.0
-
-    ; Configure pins P1.7, P0.0  as inputs
-    ;orl P0M1, #00000001b
-    ;anl P0M2, #11111110b
-    
     orl P1M1, #10000000b
     anl P1M2, #01111111b
-    
-    
     ;configuring 2.0 and 2.1 as inputs 
     orl P2M1, #00000011b
     anl P2M2, #11111100b
-    
-
     
 	; Setup ADC0
 	setb BURST0 ; Autoscan continuos conversion mode
@@ -404,12 +396,7 @@ InitADC0:
     Wait_Milli_Seconds(#250)
     ret
 
-  ; Send a character using the serial port
-  putchar:
-      jnb TI, putchar
-      clr TI
-      mov SBUF, a
-      ret
+
 
   ; Send a constant-zero-terminated string using the serial port
 
@@ -464,19 +451,28 @@ InitADC0:
     ret
   
 	
-  SendString:
+SendString:
     clr a
     movc a, @a+dptr
     jz SendString_L1
     lcall putchar
     inc dptr
     sjmp SendString  
-  SendString_L1:
+SendString_L1:
 	ret
 
-  Wait10us:
+Wait10us:
     mov R0, #18
     djnz R0, $ ; 2 machine cycles-> 2*0.27126us*18=10us
+	ret
+	
+Wait1S:
+	mov R2, #40
+LA:	mov R1, #250
+LB:	mov R0, #184
+LC:	djnz R0, LC ; 2 machine cycles-> 2*0.27126us*184=100us
+	djnz R1, LB ; 100us*250=0.025s
+	djnz R2, LA ; 0.025s*40=1s
 	ret
 
   ;---------------------------------;
@@ -484,10 +480,10 @@ InitADC0:
   ; initialization and 'forever'    ;
   ; loop.                           ;
   ;---------------------------------;
-  main:
+main:
       mov SP, #0x7F
 	  setb OVEN
-      ; Configure all the ports in bidirectional mode:
+      ;Configure all the ports in bidirectional mode:
       mov P0M1, #00H
       mov P0M2, #00H
       mov P1M1, #00H
@@ -496,18 +492,17 @@ InitADC0:
       mov P2M2, #00H
       mov P3M1, #00H
       mov P3M2, #00H
-      
+      ;Configure input pins
       lcall InitADC0
-      lcall InitSerialPort
-
+  
+	  
+      ;Configure LCD
       lcall LCD_4BIT
 
 	  ;THE BELOW VALUES ARE IN   H E X 
   	  mov Soak_temp, 	#140
-
       mov Soak_time, 	#60 ; Soak Time 60
       mov Reflow_temp, 	#220 ; Reflow Temp 220
-
       mov Reflow_time, 	#30 ; Reflow Time 30
       mov BCD_counter, 	#0x00
 
@@ -527,8 +522,14 @@ InitADC0:
       lcall Timer0_Init
       lcall Timer1_Init
       setb EA
+
+	    ;Configure putty
+      lcall InitSerialPort
       
-	  ljmp start
+	  ;ljmp start ;original
+		ljmp start
+	  
+	 
 
 shiftBCDdown:
 	mov bcd+0, bcd+1
@@ -550,15 +551,21 @@ start:
     
     mov BCD_counter+0, #0
     mov BCD_counter+1, #0
+    mov a, #1
+    mov state, a
+    clr YELLOW_LED
+    
+
+	
     clr mf
-    
-    
+
     
 ;---------------------------------------
 
 state1:
  	lcall ADC_to_PB
 	jnb PB6, done_jump
+	;lcall LEDflickerer
 	
 state1_1:
 	ljmp system_terminate ;check if pre-soak takes too long 
@@ -573,6 +580,10 @@ cont2_state1:
 	lcall shiftBCDdown
 	Set_Cursor(1,12)
     lcall LCD_3BCD
+    ;jb one_seconds_flag, callSendTemp
+    
+cont3_state1:    
+
 	lcall bcd2hex
     clr mf
     mov a, Soak_temp-2
@@ -587,6 +598,10 @@ cont2_state1:
 	
     sjmp initialize_state2  ;should be initialize_state2 but for debugging purposes....
 
+callSendTemp:
+	lcall SendTemp
+	ljmp cont3_state1
+	
 	
 done_jump:
 	ljmp you_is_done2
@@ -599,6 +614,8 @@ initialize_state2:
     Send_Constant_String(#OvenDisplay2)
 	Set_Cursor(2,4)
     Send_Constant_String(#SK)
+    mov a, #2
+    mov state, a
     clr mf
     
 state2:
@@ -640,10 +657,13 @@ initialize_state3:
     Send_Constant_String(#RTP)
     clr OVEN ;power = 100%
     mov BCD_counter, #0
+    mov a, #3
+    mov state, a
     
 state3:
 	lcall ADC_to_PB
 	jnb PB6, done_jump2 ;did user press abort?
+	;lcall LEDflickerer
 	sjmp state3_1
 
 done_jump2:
@@ -681,6 +701,10 @@ initialize_state4:
     Send_Constant_String(#OvenDisplay2)
 	Set_Cursor(2,4)
     Send_Constant_String(#Reflow)
+    mov a, #4
+    mov state, a
+    ;lcall LEDflickerer
+
     
 state4:
 	lcall ADC_to_PB
@@ -688,6 +712,7 @@ state4:
 	
 	lcall twenty_percent3
 	lcall twenty_percent4  
+	lcall LEDs4
 	sjmp state4_1
 
 	
@@ -723,6 +748,9 @@ initialize_state5:
     Send_Constant_String(#Cool_Down)
     setb OVEN
     mov BCD_counter, #0
+    mov a, #5
+    mov state, a
+    ;lcall LEDflickerer
     
 state_5:
 	;display time and temp
@@ -863,7 +891,7 @@ go_back:
 system_terminate:
 	clr mf
 	_convert_time
-	mov y+0, #5
+	mov y+0, #59
 	mov y+1, #0
 	mov y+2, #0
 	mov y+3, #0
@@ -894,7 +922,9 @@ cont_state1:
 ;---------------------------------
 	
 defaultMessageDisplay:
-
+	mov a, #0
+	mov state, a
+	lcall LEDflickerer
     WriteCommand(#1)
     Wait_Milli_Seconds(#2)
 
