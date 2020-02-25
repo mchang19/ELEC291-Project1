@@ -14,14 +14,12 @@ $MOD9351
   ;  Constants    ;
   ;---------------;
   CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
-  ;TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
-  ;TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+  TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+  TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
   TIMER1_RATE   EQU 200    ; 1000Hz, for a timer tick of 1ms
   TIMER1_RELOAD EQU ((65536-(CLK/2*TIMER1_RATE)))
   
-	; timer0 constants 
-	TIMER0_RATE   	equ 1000     					; 200 HZ = 5 ms
-	TIMER0_RELOAD 	equ ((65536-(CLK/TIMER0_RATE)))
+
 
 
   ; Reset vector
@@ -49,7 +47,14 @@ $MOD9351
     reti
 
   ; Timer/Counter 2 overflow interrupt vector
-  ;org 0x002B
+  org 0x002B
+  reti
+  
+  
+	org 0x005b ; CCU interrupt vector.  Used in this code to replay the wave file.
+	ljmp CCU_ISR
+
+
   ;  ljmp Timer2_ISR
 
   ; In the 8051 we can define direct access variables starting at location 0x30 up to location 0x7F
@@ -86,6 +91,7 @@ $MOD9351
   y:				ds 4;
   bcd:				ds 5;
 
+ five_seconds_count: ds 1 ;
 
   ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
   ; instructions with these variables.  This is how you define a 1-bit variable:
@@ -144,6 +150,7 @@ $MOD9351
   $include(math32.inc)
   $include(macros.inc)
   $include(LEDchecker.inc)
+  $include(Sound_Final.inc)
   $LIST
 
   ;                    	1234567890123456    <- This helps determine the location of the counter
@@ -160,7 +167,6 @@ $MOD9351
   blank:			db '     ', 0
   ;rfl, sk, rps, rpp, coo
 
-  Activation: 		db 'ACTIVATION', 0
   Reflow:			db 'REFLOW', 0
   Cool_Down:		db 'COOL DOWN', 0
   RTP:				db 'RAMP 2 PEAK', 0
@@ -174,7 +180,7 @@ $MOD9351
   OvenDisplay2:     db 'st:             ', 0
   RPS:				db 'RAMP 2 SOAK          ', 0
   SK:				db 'SOAKING            ', 0
-  HexAscii: 		db '0123456789ABCDEF'
+  HexAscii: 		db '0123456789ABCDEF', 0
   User:				db 'USER', 0
   Terminated:		db 'TERMINATED', 0
   ToRestart:		db 'To restart', 0
@@ -197,6 +203,7 @@ $MOD9351
     mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
     clr ET0  ; Enable timer 0 interrupt
     setb TR0  ; Start timer 0
+    ;setb SOUND_OUT
     ret
 
   ;---------------------------------;
@@ -208,7 +215,7 @@ $MOD9351
     jb error_flag, OnAlarm
     reti
   OnAlarm:
-    cpl SOUND_OUT
+    ;cpl SOUND_OUT
     reti
   ;---------------------------------;
 ; Routine to initialize the ISR   ;
@@ -264,10 +271,21 @@ Inc_Done:
 	
 	setb one_seconds_flag
 	lcall LEDflickerer
-	;lcall read_temperature
-	;lcall hex2bcd
-	;lcall shiftBCDdown
-	;lcall SendTemp
+	
+	mov a, five_seconds_count
+	cjne a, #5, cont_inc_five
+	sjmp cont_Inc_Done
+	
+cont_inc_five:
+	mov a, five_seconds_count
+	inc a
+	mov five_seconds_count, a
+	
+cont_Inc_Done:
+	lcall read_temperature
+	lcall hex2bcd
+	lcall shiftBCDdown
+	lcall SendTemp
 
 	inc BCD_counter+0
 	mov a, BCD_counter
@@ -371,8 +389,8 @@ InitSerialPort:
     ret
 
 InitADC0:
-    orl P1M1, #10000000b
-    anl P1M2, #01111111b
+    ;orl P1M1, #10000000b
+    ;anl P1M2, #01111111b
     ;configuring 2.0 and 2.1 as inputs 
     orl P2M1, #00000011b
     anl P2M2, #11111100b
@@ -380,7 +398,7 @@ InitADC0:
 	; Setup ADC0
 	setb BURST0 ; Autoscan continuos conversion mode
 	mov	ADMODB,#0x20 ;ADC0 clock is 7.3728MHz/2
-	mov	ADINS,#0x0e ; Select two channels of ADC0 for conversion
+	mov	ADINS,#0x0c ; Select two channels of ADC0 for conversion
 	mov	ADCON0,#0x05 ; Enable the converter and start immediately
 	; Wait for first conversion to complete
   InitADC0_L1:
@@ -474,6 +492,55 @@ LC:	djnz R0, LC ; 2 machine cycles-> 2*0.27126us*184=100us
 	djnz R1, LB ; 100us*250=0.025s
 	djnz R2, LA ; 0.025s*40=1s
 	ret
+Send_BCD2 mac
+	push ar0
+	mov r0, %0
+	lcall ?Send_BCD2
+	pop ar0
+endmac
+
+?Send_BCD2:
+	push acc
+	; write least significant digit
+	mov a, r0
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	pop acc
+	ret
+
+Send_BCD mac
+	push ar0
+	mov r0, %0
+	lcall ?Send_BCD
+	pop ar0
+endmac
+
+?Send_BCD:
+	push acc
+	; Write most significant digit
+	mov a, r0
+	swap a
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	; write least significant digit
+	mov a, r0
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	pop acc
+	ret
+	
+sendTemp:
+	Send_BCD2(bcd+1)
+	Send_BCD(bcd)
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar
+ret
+
 
   ;---------------------------------;
   ; Main program. Includes hardware ;
@@ -494,7 +561,7 @@ main:
       mov P3M2, #00H
       ;Configure input pins
       lcall InitADC0
-  
+      lcall Initialize
 	  
       ;Configure LCD
       lcall LCD_4BIT
@@ -505,6 +572,7 @@ main:
       mov Reflow_temp, 	#220 ; Reflow Temp 220
       mov Reflow_time, 	#30 ; Reflow Time 30
       mov BCD_counter, 	#0x00
+      mov five_seconds_count, #0
 
 
       lcall defaultMessageDisplay
@@ -522,7 +590,7 @@ main:
       lcall Timer0_Init
       lcall Timer1_Init
       setb EA
-
+		setb error_flag
 	    ;Configure putty
       lcall InitSerialPort
       
@@ -544,7 +612,14 @@ start:
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
     Send_Constant_String(#OvenDisplay2)
-    ;play sound indicating start
+    
+    ;state sound
+	;mov a, #30
+	;lcall Play_By_Index
+	;mov a, #33
+	;lcall Play_By_Index
+	
+	
     Set_Cursor(2,4)				;display what state currently in
     Send_Constant_String(#RPS)
     clr OVEN ;power = 100%
@@ -578,6 +653,8 @@ cont2_state1:
 	lcall read_temperature
 	lcall hex2bcd
 	lcall shiftBCDdown
+	lcall SendTemp
+	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
     lcall LCD_3BCD
     ;jb one_seconds_flag, callSendTemp
@@ -608,6 +685,11 @@ done_jump:
 
 initialize_state2:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #34
+	lcall Play_Sound_Using_Index
+	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
@@ -649,6 +731,11 @@ jumpy:
 
 initialize_state3:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #35
+	lcall Play_Sound_Using_Index
+	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
@@ -694,6 +781,10 @@ state3_1:
     
 initialize_state4:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #36
+	lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -740,6 +831,11 @@ state4_1:
 
 initialize_state5:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #37
+	lcall Play_Sound_Using_Index
+	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
