@@ -86,6 +86,7 @@ $MOD9351
   y:				ds 4;
   bcd:				ds 5;
 
+  five_seconds_count: ds 1 ;
 
   ; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
   ; instructions with these variables.  This is how you define a 1-bit variable:
@@ -144,6 +145,7 @@ $MOD9351
   $include(math32.inc)
   $include(macros.inc)
   $include(LEDchecker.inc)
+  $include(Sound_Final.inc)
   $LIST
 
   ;                    	1234567890123456    <- This helps determine the location of the counter
@@ -268,7 +270,17 @@ Inc_Done:
 	;lcall hex2bcd
 	;lcall shiftBCDdown
 	;lcall SendTemp
-
+	
+	cjne five_seconds_count, #5, cont_inc_five
+	sjmp cont_Inc_Done
+	
+	cont_inc_five:
+		lcall check_state
+		mov a, five_seconds_count
+		clr a
+		mov five_secounds_count, a
+	
+	cont_Inc_Done:
 	inc BCD_counter+0
 	mov a, BCD_counter
 	jnz Timer1_ISR_done
@@ -505,6 +517,7 @@ main:
       mov Reflow_temp, 	#220 ; Reflow Temp 220
       mov Reflow_time, 	#30 ; Reflow Time 30
       mov BCD_counter, 	#0x00
+      mov five_seconds_count, #0
 
 
       lcall defaultMessageDisplay
@@ -565,6 +578,13 @@ start:
 state1:
  	lcall ADC_to_PB
 	jnb PB6, done_jump
+	
+	;state sound
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #33
+	lcall Play_Sound_Using_Index
+	
 	;lcall LEDflickerer
 	
 state1_1:
@@ -608,6 +628,11 @@ done_jump:
 
 initialize_state2:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #34
+	lcall Play_Sound_Using_Index
+
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
@@ -649,6 +674,11 @@ jumpy:
 
 initialize_state3:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #35
+	lcall Play_Sound_Using_Index
+	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
@@ -694,6 +724,10 @@ state3_1:
     
 initialize_state4:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #36
+	lcall Play_Sound_Using_Index
 	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
@@ -740,6 +774,11 @@ state4_1:
 
 initialize_state5:
 	;audio to indicate soak time
+	mov a, #30
+	lcall Play_Sound_Using_Index
+	mov a, #37
+	lcall Play_Sound_Using_Index
+	
 	Set_Cursor(1,1)		;will clear previous screen
    	Send_Constant_String(#OvenDisplay)
     Set_Cursor(2,1)
