@@ -7,7 +7,7 @@ $MOD9351
 
   XTAL EQU 7373000
   BAUD EQU 115200
-  BRVAL EQU ((CLK/BAUD)-16)
+  BRVAL EQU ((XTAL/BAUD)-16)
  
 
   ;---------------;
@@ -48,10 +48,10 @@ $MOD9351
 
   ; Timer/Counter 2 overflow interrupt vector
   org 0x002B
-  reti
+   reti
   
   
-	org 0x005b ; CCU interrupt vector.  Used in this code to replay the wave file.
+  org 0x005b ; CCU interrupt vector.  Used in this code to replay the wave file.
 	ljmp CCU_ISR
 
 
@@ -272,20 +272,24 @@ Inc_Done:
 	setb one_seconds_flag
 	lcall LEDflickerer
 	
-	mov a, five_seconds_count
-	cjne a, #5, cont_inc_five
-	sjmp cont_Inc_Done
+	;mov a, five_seconds_count
+	;cjne a, #5, cont_inc_five
+	;sjmp cont_Inc_Done
 	
-cont_inc_five:
-	mov a, five_seconds_count
-	inc a
-	mov five_seconds_count, a
+;cont_inc_five:
+;	mov a, five_seconds_count
+;	inc a
+;	mov five_seconds_count, a
 	
-cont_Inc_Done:
+;cont_Inc_Done:
+
 	lcall read_temperature
-	lcall hex2bcd
 	lcall shiftBCDdown
+
 	lcall SendTemp
+	Set_cursor(2, 16)
+	Display_char(#'C')
+	clr mf
 
 	inc BCD_counter+0
 	mov a, BCD_counter
@@ -492,45 +496,7 @@ LC:	djnz R0, LC ; 2 machine cycles-> 2*0.27126us*184=100us
 	djnz R1, LB ; 100us*250=0.025s
 	djnz R2, LA ; 0.025s*40=1s
 	ret
-Send_BCD2 mac
-	push ar0
-	mov r0, %0
-	lcall ?Send_BCD2
-	pop ar0
-endmac
 
-?Send_BCD2:
-	push acc
-	; write least significant digit
-	mov a, r0
-	anl a, #0fh
-	orl a, #30h
-	lcall putchar
-	pop acc
-	ret
-
-Send_BCD mac
-	push ar0
-	mov r0, %0
-	lcall ?Send_BCD
-	pop ar0
-endmac
-
-?Send_BCD:
-	push acc
-	; Write most significant digit
-	mov a, r0
-	swap a
-	anl a, #0fh
-	orl a, #30h
-	lcall putchar
-	; write least significant digit
-	mov a, r0
-	anl a, #0fh
-	orl a, #30h
-	lcall putchar
-	pop acc
-	ret
 	
 sendTemp:
 	Send_BCD2(bcd+1)
@@ -539,6 +505,7 @@ sendTemp:
 	lcall putchar
 	mov a, #'\n'
 	lcall putchar
+
 ret
 
 
@@ -561,9 +528,7 @@ main:
       mov P3M2, #00H
       ;Configure input pins
       lcall InitADC0
-      lcall Initialize
-	  
-      ;Configure LCD
+      ;lcall Initialize
       lcall LCD_4BIT
 
 	  ;THE BELOW VALUES ARE IN   H E X 
@@ -590,7 +555,6 @@ main:
       lcall Timer0_Init
       lcall Timer1_Init
       setb EA
-		setb error_flag
 	    ;Configure putty
       lcall InitSerialPort
       
@@ -640,7 +604,6 @@ start:
 state1:
  	lcall ADC_to_PB
 	jnb PB6, done_jump
-	;lcall LEDflickerer
 	
 state1_1:
 	ljmp system_terminate ;check if pre-soak takes too long 
@@ -650,14 +613,12 @@ cont2_state1:
 	Set_Cursor(1,3)			
     _convert_time
     lcall LCD_3BCD
+    
 	lcall read_temperature
-	lcall hex2bcd
 	lcall shiftBCDdown
-	lcall SendTemp
 	Wait_Milli_Seconds(#250)
 	Set_Cursor(1,12)
     lcall LCD_3BCD
-    ;jb one_seconds_flag, callSendTemp
     
 cont3_state1:    
 
@@ -674,11 +635,6 @@ cont3_state1:
     clr mf 
 	
     sjmp initialize_state2  ;should be initialize_state2 but for debugging purposes....
-
-callSendTemp:
-	lcall SendTemp
-	ljmp cont3_state1
-	
 	
 done_jump:
 	ljmp you_is_done2
