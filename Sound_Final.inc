@@ -433,12 +433,13 @@ Play_Sound_Using_Index:
 
 T2S_FSM:
 	mov a, T2S_FSM_state
+	clr fsm_done ; Make sure fsm_done flag cleared
 ;-----------------------------------------------------13---------------------------------------------	
 T2S_FSM_State13:
     cjne a, #13, T2S_FSM_State14
     
 	mov a, #31 ; Index 31 has "Current temperature" audio clip
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
     mov T2S_FSM_State, #14
     ret
 ;------------------------------------------------------14--------------------------------------------
@@ -475,7 +476,7 @@ T2S_FSM_State0_Done:
 T2S_FSM_State1: ; Play degrees when degree is less than 20
 	cjne a, #1, T2S_FSM_State2
 	mov a, degrees ; Index 28 has "100" audio clip
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 	mov T2S_FSM_state, #2
 	ret
 ;-------------------------------------------------------2-----------------------------------------------
@@ -492,7 +493,7 @@ T2S_FSM_State3: ; play the tens(21~99)
 	mov b, #10
 	div ab
 	add a, #18
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 	mov T2S_FSM_State, #4
 	ret
 ;-------------------------------------------------------4------------------------------------------------	
@@ -510,7 +511,7 @@ T2S_FSM_State5: ; play the remains
 	div ab
 	mov a, b
 	jz T2S_FSM_State5_Done ;for preventing to playing like forty zero
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 T2S_FSM_State5_Done:
 	mov T2s_FSM_State, #2
 	ret
@@ -521,7 +522,7 @@ T2S_FSM_State6: ; Play the hundreds(101~240)
 	mov b, #100
 	div ab
 	add a, #27
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 	mov T2S_FSM_state, #7
 	ret
 ;--------------------------------------------------------7--------------------------------------------------
@@ -539,6 +540,8 @@ T2S_FSM_State8: ; Play the tens(101~240)
 	div ab
 	mov a, b
 	mov b, a
+	
+	clr c
 	subb a, #20
 	jnc tens_gt_20
 	mov a, b
@@ -548,7 +551,7 @@ tens_gt_20:
 	mov b, #10
 	div ab
 	add a, #18
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 T2S_FSM_State8_Done:
 	mov T2S_FSM_state, #9
 	ret
@@ -567,18 +570,20 @@ T2S_FSM_State10: ; Play the remains
 	div ab
 	mov a, b
 	mov b, a
+	
+	clr c
 	subb a, #20
 	jnc remains_gt_20
 	mov a, b
 	jz T2S_FSM_State10_Done ;for preventing to playing like forty zero
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 	sjmp T2S_FSM_State10_Done
 remains_gt_20:	
 	mov b, #10
 	div ab
 	mov a, b
 	jz T2S_FSM_State10_Done ;for preventing to playing like forty zero
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 T2S_FSM_State10_Done:
 	mov T2S_FSM_State, #2
 	ret
@@ -586,7 +591,7 @@ T2S_FSM_State10_Done:
 T2S_FSM_State11: ; play the word 'degrees'
 	cjne a, #11, T2S_FSM_State12
 	mov a, #38 ;the index 38 has the word 'degree celcius'
-	lcall Play_Sound_Using_Index
+	lcall Play_By_Index
 	mov T2S_FSM_state, #12
 	ret
 ;---------------------------------------------------------12-------------------------------------------------
@@ -617,8 +622,7 @@ Play_By_Index:
 	lcall Play_Sound_Using_Index
 	jb TMOD20, $ ; Wait for sound to finish playing
 	ret
-index_loop:
-	ljmp index_loop
+
 ;---------------------------------;
 ; Hardware initialization.                          
 ;---------------------------------;
@@ -651,26 +655,38 @@ Initialize:
 ;				  lcall Play_Sound..;
 ;-----------------------------------;
 check_state:
-	mov a, state
-	jnz temperature_check ; if state is not 0 (ie. reflow has started), start speaker
-	sjmp check_state ; checks until state is not 0
+	;mov a, state
+	sjmp temperature_loop ; if state is not 0 (ie. reflow has started), start speaker
+	ret ; checks until state is not 0
 	
 temperature_check:
 	mov a, five_seconds_count
 	mov b, #15
-	div ab
+	div ab ; divide # of seconds past / 5
 	mov a, b
-	jnz check_state
+	jz temperature_loop ; if remainder = 0 (ie. 5 sec), say temperature
+	sjmp temperature_check
 	
 temperature_loop:
-	lcall read_temperature ; Reads temperature
-	mov a, x
-	mov degrees, a ; Move temperature reading to degrees variable
-	mov a, #1
-	mov T2S_FSM_Start, a ; Make sure that start flag is on
-	clr fsm_done ; Make sure fsm_done flag cleared
-	mov a, #13 ; Put number of first state into a
+	;lcall read_temperature ; Reads temperature
+	;mov a, x
+	;mov degrees, a ; Move temperature reading to degrees variable
+	mov T2S_FSM_State, #13
+	setb T2S_FSM_Start ; Make sure that start flag is on
+fsmloop:
 	lcall T2S_FSM ; Run the state machine that plays minutes:seconds
-	ljmp check_state ; Go back and check state
-
+	jb fsm_done, done_fsm
+    ljmp fsmloop	
+done_fsm:
+	;Wait_Milli_Seconds(#250)
+	;Wait_Milli_Seconds(#250)
+	;Wait_Milli_Seconds(#250)
+	;Wait_Milli_Seconds(#250)
+	;Wait_Milli_Seconds(#250)
+	;Wait_Milli_Seconds(#250)
+	;ljmp check_state ; Go back and check temperature
+	clr five_seconds_flag
+	
+stop_audio:
+	ret
 END
